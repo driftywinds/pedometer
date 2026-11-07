@@ -94,7 +94,7 @@ public final class PeriodicBackupManager {
         preferences(context).edit().putBoolean(PREF_ENABLED, enabled).apply();
         if (enabled) {
             if (getNextDue(context) <= 0) {
-                setNextDue(context, computeNextDue(System.currentTimeMillis(), getInterval(context)));
+                setNextDue(context, computeNextDue(System.currentTimeMillis()));
             }
             schedule(context);
         } else {
