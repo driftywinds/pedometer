@@ -255,7 +255,7 @@
                             android:layout_alignParentLeft="true"
                             android:layout_alignParentStart="true"
                             android:layout_alignParentTop="true"
-                            android:src="@drawable/ic_transfer_within_a_station_65black_30px" />
+                            android:src="@drawable/ic_transfer_within_a_station_65black_30px" android:tint="?attr/colorOnSurfaceVariant" />
 
                         <TextView
                             android:id="@+id/training_card_distance"
@@ -293,7 +293,7 @@
                             android:layout_alignParentLeft="true"
                             android:layout_alignParentStart="true"
                             android:layout_alignParentTop="true"
-                            android:src="@drawable/ic_fire_65black_40dp" />
+                            android:src="@drawable/ic_fire_65black_40dp" android:tint="?attr/colorOnSurfaceVariant" />
 
                         <TextView
                             android:id="@+id/training_card_calories"
@@ -333,7 +333,7 @@
                             android:layout_alignParentLeft="true"
                             android:layout_alignParentStart="true"
                             android:layout_alignParentTop="true"
-                            android:src="@drawable/ic_clock_grey600_24dp" />
+                            android:src="@drawable/ic_clock_grey600_24dp" android:tint="?attr/colorOnSurfaceVariant" />
 
                         <TextView
                             android:id="@+id/training_card_duration"

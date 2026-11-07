@@ -48,7 +48,7 @@
                 android:layout_height="100dp"
                 android:layout_alignParentTop="true"
                 android:layout_centerHorizontal="true"
-                android:src="@drawable/ic_directions_run" />
+                android:src="@drawable/ic_directions_run" android:tint="@color/white" />
 
             <TextView
                 android:id="@+id/textView7"

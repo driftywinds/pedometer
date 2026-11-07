@@ -66,7 +66,7 @@
                         android:layout_centerInParent="true"
                         android:layout_marginEnd="4dp"
                         android:layout_marginRight="4dp"
-                        android:src="@drawable/ic_directions_walk_65black_30dp" />
+                        android:src="@drawable/ic_directions_walk_65black_30dp" android:tint="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/textView18"
@@ -145,7 +145,7 @@
                         android:layout_alignParentLeft="true"
                         android:layout_alignParentStart="true"
                         android:layout_centerInParent="true"
-                        android:src="@drawable/ic_fire_65black_40dp" />
+                        android:src="@drawable/ic_fire_65black_40dp" android:tint="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/calorieTitle"
@@ -193,7 +193,7 @@
                         android:layout_alignParentLeft="true"
                         android:layout_alignParentStart="true"
                         android:layout_centerInParent="true"
-                        android:src="@drawable/ic_transfer_within_a_station_65black_30px" />
+                        android:src="@drawable/ic_transfer_within_a_station_65black_30px" android:tint="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/training_distance_title"
@@ -241,7 +241,7 @@
                         android:layout_alignParentLeft="true"
                         android:layout_alignParentStart="true"
                         android:layout_centerInParent="true"
-                        android:src="@drawable/ic_clock_grey600_24dp" />
+                        android:src="@drawable/ic_clock_grey600_24dp" android:tint="?attr/colorOnSurfaceVariant" />
 
                     <TextView
                         android:id="@+id/textView11"
