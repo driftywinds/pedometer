@@ -191,6 +191,14 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
         }
     }
 
+    /**
+     * Height of the system status bar in pixels, or 0 if it cannot be resolved.
+     */
+    private int getStatusBarHeight() {
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        return resourceId > 0 ? getResources().getDimensionPixelSize(resourceId) : 0;
+    }
+
     @Override
     protected void onResume() {
         super.onResume();
@@ -222,6 +230,19 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
 
         mNavigationView = findViewById(R.id.nav_view);
         mNavigationView.setNavigationItemSelectedListener(this);
+
+        // The drawer is drawn edge to edge, so the header would otherwise start underneath
+        // the status bar and clip the logo.
+        View navHeader = mNavigationView.getHeaderView(0);
+        if (navHeader != null) {
+            ViewGroup.MarginLayoutParams headerParams =
+                    (ViewGroup.MarginLayoutParams) navHeader.getLayoutParams();
+            int statusBarHeight = getStatusBarHeight();
+            if (headerParams.topMargin != statusBarHeight) {
+                headerParams.topMargin = statusBarHeight;
+                navHeader.setLayoutParams(headerParams);
+            }
+        }
 
         selectNavigationItem(getNavigationDrawerID());
 

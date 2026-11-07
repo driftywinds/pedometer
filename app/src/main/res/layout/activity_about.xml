@@ -116,6 +116,13 @@
 
         </RelativeLayout>
 
+        <TextView
+            android:id="@+id/textFieldRefactored"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:text="@string/about_refactored_by" />
 
         <TextView
             android:id="@+id/textFieldAffiliation"
