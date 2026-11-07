@@ -16,7 +16,6 @@
     You should have received a copy of the GNU General Public License
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 -->
-<inset xmlns:android="http://schemas.android.com/apk/res/android"
-    android:drawable="@drawable/ic_walk_black_24dp"
-    android:inset="0dp"
-    android:tint="?attr/colorOnSurface" />
+<bitmap xmlns:android="http://schemas.android.com/apk/res/android"
+    android:src="@drawable/ic_walk_black_24dp"
+    android:tint="#1C1B1F" />
