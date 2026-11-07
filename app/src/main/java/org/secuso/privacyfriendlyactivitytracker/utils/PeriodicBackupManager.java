@@ -17,6 +17,7 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.utils;
 
+import android.annotation.SuppressLint;
 import android.app.AlarmManager;
 import android.app.PendingIntent;
 import android.content.ContentResolver;
@@ -143,6 +144,7 @@ public final class PeriodicBackupManager {
         preferences(context).edit().putLong(PREF_LAST_RUN, time).apply();
     }
 
+    @SuppressLint("NewApi")
     /** Human readable folder name of the selected tree, or null when none is selected. */
     public static String getLocationName(Context context) {
         String tree = getTreeUri(context);
@@ -328,6 +330,7 @@ public final class PeriodicBackupManager {
         }, "pedometer-periodic-backup").start();
     }
 
+    @SuppressLint("NewApi")
     /** Writes one backup file into the selected folder and prunes old files. */
     public static boolean performBackup(Context context) {
         if (!isSupported()) {
@@ -377,6 +380,7 @@ public final class PeriodicBackupManager {
         }
     }
 
+    @SuppressLint("NewApi")
     private static void prune(Context context, ContentResolver resolver, Uri treeUri) {
         int keep = getKeepCount(context);
         Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(

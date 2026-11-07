@@ -17,6 +17,7 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.activities;
 
+import android.annotation.SuppressLint;
 import android.content.ActivityNotFoundException;
 import android.content.Context;
 import android.content.Intent;
@@ -244,6 +245,7 @@ public class PeriodicBackupActivity extends AppCompatActivity {
         }, "pedometer-periodic-backup-now").start();
     }
 
+    @SuppressLint("NewApi")
     private void onFolderPicked(Uri treeUri) {
         if (treeUri == null) {
             pendingEnable = false;
