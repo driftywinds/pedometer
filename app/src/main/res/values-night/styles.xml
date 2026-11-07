@@ -53,7 +53,7 @@
         <item name="android:alertDialogTheme">@style/AppTheme.AlertDialog</item>
     </style>
 
-    <style name="AppTheme.Dialog" parent="Theme.MaterialComponents.Dark.Dialog.Alert">
+    <style name="AppTheme.Dialog" parent="Theme.AppCompat.Dialog.Alert">
         <item name="colorPrimary">@color/m3_primary</item>
         <item name="colorAccent">@color/m3_secondary</item>
     </style>

@@ -56,7 +56,7 @@
     </style>
 
     <!-- Dialog themes -->
-    <style name="AppTheme.Dialog" parent="Theme.MaterialComponents.Light.Dialog.Alert">
+    <style name="AppTheme.Dialog" parent="Theme.AppCompat.Light.Dialog.Alert">
         <item name="colorPrimary">@color/m3_primary</item>
         <item name="colorAccent">@color/m3_secondary</item>
     </style>
