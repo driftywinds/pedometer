@@ -25,6 +25,7 @@ import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.view.MenuItem;
 import android.view.View;
+import android.view.ViewGroup;
 
 import androidx.appcompat.app.ActionBarDrawerToggle;
 import androidx.appcompat.app.AppCompatActivity;
@@ -234,7 +235,7 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
         // The drawer is drawn edge to edge, so the header would otherwise start underneath
         // the status bar and clip the logo.
         View navHeader = mNavigationView.getHeaderView(0);
-        if (navHeader != null) {
+        if (navHeader != null && navHeader.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams headerParams =
                     (ViewGroup.MarginLayoutParams) navHeader.getLayoutParams();
             int statusBarHeight = getStatusBarHeight();
