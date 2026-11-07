@@ -29,7 +29,6 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.ImageButton;
-import android.widget.RelativeLayout;
 import android.widget.TextView;
 
 import androidx.appcompat.widget.PopupMenu;
@@ -530,7 +529,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         public TextView mCaloriesTitleTextView;
         public TextView mGoalTextView;
         public StepRingView mStepRing;
-        public RelativeLayout mVelocityContainer;
+        public View mVelocityContainer;
         public ImageButton mPrevButton;
         public ImageButton mNextButton;
         public ImageButton mMenuButton;
