@@ -374,12 +374,27 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
      */
     private void bindTrackingStatus(final TrackingStatusViewHolder holder) {
         final int state = TrackingNotificationHelper.getState(holder.context);
+        final RecyclerView.LayoutParams layoutParams =
+                (RecyclerView.LayoutParams) holder.itemView.getLayoutParams();
         if (state != TrackingNotificationHelper.STATE_MISSING
                 && state != TrackingNotificationHelper.STATE_NOTIFICATIONS_OFF) {
+            // RecyclerView measures GONE children, so collapse the item completely.
             holder.itemView.setVisibility(View.GONE);
+            if (layoutParams.height != 0) {
+                layoutParams.height = 0;
+                layoutParams.setMargins(0, 0, 0, 0);
+                holder.itemView.setLayoutParams(layoutParams);
+            }
             return;
         }
         holder.itemView.setVisibility(View.VISIBLE);
+        if (layoutParams.height == 0) {
+            layoutParams.height = RecyclerView.LayoutParams.WRAP_CONTENT;
+            int margin = holder.itemView.getResources()
+                    .getDimensionPixelSize(R.dimen.cardview_default_margin);
+            layoutParams.setMargins(margin, 0, margin, margin);
+            holder.itemView.setLayoutParams(layoutParams);
+        }
         if (state == TrackingNotificationHelper.STATE_NOTIFICATIONS_OFF) {
             holder.mStatusTextView.setText(R.string.tracking_status_notifications_off);
             holder.mActionButton.setText(R.string.tracking_action_fix);

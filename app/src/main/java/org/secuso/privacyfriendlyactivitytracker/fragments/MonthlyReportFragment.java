@@ -370,7 +370,6 @@ public class MonthlyReportFragment extends Fragment implements ReportAdapter.OnI
                 if (activitySummary == null) {
                     activitySummary = new ActivitySummary(totalSteps, totalDistance, totalCalories, title);
                     reports.add(activitySummary);
-                    reports.add(new TrackingStatus());
                 } else {
                     activitySummary.setSteps(totalSteps);
                     activitySummary.setDistance(totalDistance);
@@ -392,6 +391,9 @@ public class MonthlyReportFragment extends Fragment implements ReportAdapter.OnI
                     activityChart.setTitle(title);
                 }
 
+                if (reports.isEmpty() || !(reports.get(reports.size() - 1) instanceof TrackingStatus)) {
+                    reports.add(new TrackingStatus());
+                }
                 String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
                 activityChart.setGoal(Integer.valueOf(d));
                 // The summary ring shows the progress of the whole displayed month.

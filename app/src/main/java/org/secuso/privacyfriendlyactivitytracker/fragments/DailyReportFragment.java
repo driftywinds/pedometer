@@ -445,8 +445,6 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         if (activitySummary == null) {
             activitySummary = new ActivitySummary(stepCount, distance, calories, simpleDateFormat.format(day.getTime()));
             reports.add(activitySummary);
-            // The notification banner is shown right below the step summary card.
-            reports.add(new TrackingStatus());
         } else {
             activitySummary.setSteps(stepCount);
             activitySummary.setDistance(distance);
@@ -471,6 +469,9 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
             activityChart.setDistance(distanceData);
             activityChart.setCalories(caloriesData);
             activityChart.setTitle(simpleDateFormat.format(day.getTime()));
+        }
+        if (reports.isEmpty() || !(reports.get(reports.size() - 1) instanceof TrackingStatus)) {
+            reports.add(new TrackingStatus());
         }
         String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
         activityChart.setGoal(Integer.valueOf(d));

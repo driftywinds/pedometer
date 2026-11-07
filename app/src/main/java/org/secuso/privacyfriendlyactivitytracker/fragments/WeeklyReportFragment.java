@@ -390,7 +390,6 @@ public class WeeklyReportFragment extends Fragment implements ReportAdapter.OnIt
                 if (activitySummary == null) {
                     activitySummary = new ActivitySummary(totalSteps, totalDistance, totalCalories, title);
                     reports.add(activitySummary);
-                    reports.add(new TrackingStatus());
                 } else {
                     activitySummary.setSteps(totalSteps);
                     activitySummary.setDistance(totalDistance);
@@ -408,6 +407,9 @@ public class WeeklyReportFragment extends Fragment implements ReportAdapter.OnIt
                     activityChart.setDistance(distanceData);
                     activityChart.setCalories(caloriesData);
                     activityChart.setTitle(title);
+                }
+                if (reports.isEmpty() || !(reports.get(reports.size() - 1) instanceof TrackingStatus)) {
+                    reports.add(new TrackingStatus());
                 }
                 String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
                 activityChart.setGoal(Integer.valueOf(d));
