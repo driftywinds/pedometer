@@ -43,7 +43,7 @@ android {
     compileSdk 34
 
     defaultConfig {
-        applicationId 'org.secuso.privacyfriendlyactivitytracker'
+        applicationId 'com.dwprod.pedometer'
         minSdkVersion 17
         targetSdkVersion 34
         // The release workflow passes the version of the tag (e.g. v3.2.0) as Gradle

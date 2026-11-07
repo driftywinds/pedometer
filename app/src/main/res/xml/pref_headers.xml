@@ -32,7 +32,7 @@
         android:title="@string/pref_header_walking_modes">
         <intent
             android:targetClass="org.secuso.privacyfriendlyactivitytracker.activities.WalkingModesActivity"
-            android:targetPackage="org.secuso.privacyfriendlyactivitytracker" />
+            android:targetPackage="com.dwprod.pedometer" />
     </header>
 
 </preference-headers>
