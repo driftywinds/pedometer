@@ -59,6 +59,7 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenc
 import org.secuso.privacyfriendlyactivitytracker.receivers.StepCountPersistenceReceiver;
 import org.secuso.privacyfriendlyactivitytracker.receivers.WidgetReceiver;
 import org.secuso.privacyfriendlyactivitytracker.utils.AndroidVersionHelper;
+import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 import java.io.File;
@@ -415,6 +416,7 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         private Preference exportDataPreference;
         private Preference exportBackupPreference;
         private Preference importBackupPreference;
+        private Preference periodicBackupPreference;
         private Preference lengthUnitPreference;
         private Preference energyUnitPreference;
         private Preference dailyStepGoalPreference;
@@ -449,6 +451,7 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
             exportDataPreference = findPreference(getString(R.string.pref_export_data));
             exportBackupPreference = findPreference(getString(R.string.pref_export_backup));
             importBackupPreference = findPreference(getString(R.string.pref_import_backup));
+            periodicBackupPreference = findPreference(getString(R.string.pref_periodic_backup));
             useStepHardwarePreference = findPreference(getString(R.string.pref_use_step_hardware));
 
             bindPreferenceSummaryToValue(lengthUnitPreference);
@@ -530,6 +533,16 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
                     @Override
                     public boolean onPreferenceClick(Preference preference) {
                         startImportBackup();
+                        return true;
+                    }
+                });
+            }
+
+            if (periodicBackupPreference != null) {
+                periodicBackupPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        startActivity(new Intent(getActivity(), PeriodicBackupActivity.class));
                         return true;
                     }
                 });
@@ -752,6 +765,10 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
             Context context = getActivity().getApplicationContext();
             Log.d("preference check","pref changed: "+key);
+
+            if (key != null && key.startsWith("pref_periodic_backup") && periodicBackupPreference != null) {
+                periodicBackupPreference.setSummary(PeriodicBackupManager.getSummary(context));
+            }
 
 
             // Detect changes on preferences and update our internal variable

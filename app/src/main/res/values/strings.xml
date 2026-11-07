@@ -410,4 +410,32 @@
     <string name="a11y_next">Next</string>
     <string name="a11y_start_training">Start training</string>
     <string name="a11y_walking_modes">Walking modes</string>
-</resources>
+    <string name="pref_periodic_backup" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.periodic_backup</string>
+    <string name="pref_title_periodic_backup">Periodic backup</string>
+    <string name="pref_summary_periodic_backup">Automatically back up all data to a chosen folder</string>
+    <string name="periodic_backup_title">Periodic backup</string>
+    <string name="periodic_backup_location_title">Backup location</string>
+    <string name="periodic_backup_location_none">No folder selected</string>
+    <string name="periodic_backup_choose_location">Choose folder</string>
+    <string name="periodic_backup_backup_now">Back up now</string>
+    <string name="periodic_backup_interval_title">Interval</string>
+    <string name="periodic_backup_interval_daily">Daily</string>
+    <string name="periodic_backup_interval_every_other_day">Every other day</string>
+    <string name="periodic_backup_interval_weekly">Weekly</string>
+    <string name="periodic_backup_interval_monthly">Monthly</string>
+    <string name="periodic_backup_keep_title">Backups to keep</string>
+    <string name="periodic_backup_enable">Enable periodic backup</string>
+    <string name="periodic_backup_next_run">Next backup: %1$s</string>
+    <string name="periodic_backup_summary_off">Off</string>
+    <string name="periodic_backup_summary_on">%1$s, keeping %2$d backups</string>
+    <string name="periodic_backup_no_location">Choose a backup folder first.</string>
+    <string name="periodic_backup_running">Creating backup…</string>
+    <string name="periodic_backup_unsupported">Periodic backup requires Android 5.0 or newer.</string>
+    <string name="periodic_backup_error">Could not create the backup.</string>
+    <string-array name="periodic_backup_keep_values" translatable="false">
+        <item>1</item>
+        <item>2</item>
+        <item>3</item>
+        <item>4</item>
+        <item>5</item>
+    </string-array></resources>

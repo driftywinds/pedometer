@@ -13,6 +13,7 @@ import com.google.android.material.color.DynamicColors;
 
 import org.secuso.privacyfriendlyactivitytracker.backup.BackupCreator;
 import org.secuso.privacyfriendlyactivitytracker.backup.BackupRestorer;
+import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 import org.secuso.privacyfriendlybackup.api.pfa.BackupManager;
 
 import java.lang.ref.WeakReference;
@@ -30,6 +31,10 @@ public class PFAPedometerApplication extends MultiDexApplication implements Conf
         DynamicColors.applyToActivitiesIfAvailable(this, (activity, themeResId) -> themeResId != 0);
         BackupManager.setBackupCreator(new BackupCreator());
         BackupManager.setBackupRestorer(new BackupRestorer());
+        // Re-arm the periodic backup alarm and run a backup that became due while the app was
+        // closed or the device was in deep sleep.
+        PeriodicBackupManager.schedule(this);
+        PeriodicBackupManager.runIfDue(this);
     }
 
     @NonNull

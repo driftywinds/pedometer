@@ -115,6 +115,10 @@
             android:key="@string/pref_import_backup"
             android:summary="@string/pref_summary_import_backup"
             android:title="@string/pref_title_import_backup" />
+        <Preference
+            android:key="@string/pref_periodic_backup"
+            android:summary="@string/pref_summary_periodic_backup"
+            android:title="@string/pref_title_periodic_backup" />
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/pref_group_title_personal_settings">

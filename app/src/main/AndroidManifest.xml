@@ -107,6 +107,14 @@
                 android:value="org.secuso.privacyfriendlyactivitytracker.activities.MainActivity" />
         </activity>
         <activity
+            android:name="org.secuso.privacyfriendlyactivitytracker.activities.PeriodicBackupActivity"
+            android:label="@string/pref_title_periodic_backup"
+            android:parentActivityName="org.secuso.privacyfriendlyactivitytracker.activities.PreferencesActivity">
+            <meta-data
+                android:name="android.support.PARENT_ACTIVITY"
+                android:value="org.secuso.privacyfriendlyactivitytracker.activities.PreferencesActivity" />
+        </activity>
+        <activity
             android:name="org.secuso.privacyfriendlyactivitytracker.activities.MotivationAlertTextsActivity"
             android:label="@string/activity_title_motivation_alerts"
             android:parentActivityName="org.secuso.privacyfriendlyactivitytracker.activities.PreferencesActivity">
@@ -151,6 +159,13 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
+        <receiver android:name="org.secuso.privacyfriendlyactivitytracker.receivers.PeriodicBackupReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="org.secuso.privacyfriendlyactivitytracker.action.PERIODIC_BACKUP" />
             </intent-filter>
         </receiver>
         <receiver android:name="org.secuso.privacyfriendlyactivitytracker.receivers.OnShutdownBroadcastReceiver"
