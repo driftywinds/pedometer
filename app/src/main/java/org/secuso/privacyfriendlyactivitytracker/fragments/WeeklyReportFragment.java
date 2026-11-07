@@ -46,6 +46,7 @@ import org.secuso.privacyfriendlyactivitytracker.adapters.ReportAdapter;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityChart;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityDayChart;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivitySummary;
+import org.secuso.privacyfriendlyactivitytracker.models.TrackingStatus;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
 import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
@@ -389,6 +390,7 @@ public class WeeklyReportFragment extends Fragment implements ReportAdapter.OnIt
                 if (activitySummary == null) {
                     activitySummary = new ActivitySummary(totalSteps, totalDistance, totalCalories, title);
                     reports.add(activitySummary);
+                    reports.add(new TrackingStatus());
                 } else {
                     activitySummary.setSteps(totalSteps);
                     activitySummary.setDistance(totalDistance);
@@ -409,6 +411,8 @@ public class WeeklyReportFragment extends Fragment implements ReportAdapter.OnIt
                 }
                 String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
                 activityChart.setGoal(Integer.valueOf(d));
+                // The summary ring shows the progress of the whole displayed week.
+                activitySummary.setGoal(Integer.valueOf(d) * 7);
                 // notify ui
                 if (mAdapter != null && mRecyclerView != null && getActivity() != null) {
                     getActivity().runOnUiThread(new Runnable() {

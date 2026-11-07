@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Privacy Friendly Pedometer is licensed under the GPLv3.
+    Copyright (C) 2017  Tobias Neidig
+
+    This program is free software: you can redistribute it and/or modify
+    it under the terms of the GNU General Public License as published by
+    the Free Software Foundation, either version 3 of the License, or
+    (at your option) any later version.
+
+    This program is distributed in the hope that it will be useful,
+    but WITHOUT ANY WARRANTY; without even the implied warranty of
+    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+    GNU General Public License for more details.
+
+    You should have received a copy of the GNU General Public License
+    along with this program. If not, see <http://www.gnu.org/licenses/>.
+-->
+<resources>
+    <!-- Material 3 color roles for the dark theme -->
+    <color name="m3_primary">#8FCDF5</color>
+    <color name="m3_on_primary">#00344F</color>
+    <color name="m3_primary_container">#004C6E</color>
+    <color name="m3_on_primary_container">#C9E6FF</color>
+    <color name="m3_secondary">#8FCDF5</color>
+    <color name="m3_on_secondary">#00344F</color>
+    <color name="m3_secondary_container">#004C6E</color>
+    <color name="m3_on_secondary_container">#C9E6FF</color>
+    <color name="m3_tertiary">#93D392</color>
+    <color name="m3_on_tertiary">#003909</color>
+    <color name="m3_tertiary_container">#174F1E</color>
+    <color name="m3_on_tertiary_container">#AFF5B0</color>
+    <color name="m3_error">#FFB4AB</color>
+    <color name="m3_on_error">#690005</color>
+    <color name="m3_error_container">#93000A</color>
+    <color name="m3_on_error_container">#FFDAD6</color>
+    <color name="m3_background">#101418</color>
+    <color name="m3_on_background">#E1E3E5</color>
+    <color name="m3_surface">#101418</color>
+    <color name="m3_on_surface">#E1E3E5</color>
+    <color name="m3_surface_variant">#41484E</color>
+    <color name="m3_on_surface_variant">#C1C7CE</color>
+    <color name="m3_outline">#8B9198</color>
+
+    <!-- Semantic colors used by layouts -->
+    <color name="text_primary">#E1E3E5</color>
+    <color name="text_secondary">#C1C7CE</color>
+    <color name="card_background">#1B2025</color>
+    <color name="card_stroke">#33FFFFFF</color>
+    <color name="divider">#33FFFFFF</color>
+    <color name="pill_background">#252C33</color>
+    <color name="on_primary_text">#00344F</color>
+    <color name="ring_track">#3A4249</color>
+    <color name="status_ok">#7BD88F</color>
+    <color name="status_warning">#FFB4AB</color>
+</resources>

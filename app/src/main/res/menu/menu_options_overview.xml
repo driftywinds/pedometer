@@ -20,17 +20,14 @@
     xmlns:android="http://schemas.android.com/apk/res/android">
     <item
         android:id="@+id/menu_pause_step_detection"
-        android:icon="@android:drawable/ic_media_pause"
         android:title="@string/pause_step_detection"
-        app:showAsAction="always" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/menu_continue_step_detection"
-        android:icon="@android:drawable/ic_media_play"
         android:title="@string/continue_step_detection"
-        app:showAsAction="always" />
+        app:showAsAction="never" />
     <item
         android:id="@+id/menu_restore_notification"
-        android:icon="@drawable/ic_notifications_black_24dp"
         android:title="@string/menu_restore_notification"
         app:showAsAction="never" />
 </menu>

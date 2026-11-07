@@ -17,6 +17,7 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.adapters;
 
+import android.app.Activity;
 import android.content.Context;
 import android.graphics.Color;
 import android.util.Log;
@@ -26,6 +27,7 @@ import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.RelativeLayout;
 import android.widget.TextView;
@@ -57,6 +59,10 @@ import org.secuso.privacyfriendlyactivitytracker.models.ActivityChart;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityChartDataSet;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityDayChart;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivitySummary;
+import org.secuso.privacyfriendlyactivitytracker.models.TrackingStatus;
+import org.secuso.privacyfriendlyactivitytracker.ui.widget.StepRingView;
+import org.secuso.privacyfriendlyactivitytracker.utils.ThemeUtils;
+import org.secuso.privacyfriendlyactivitytracker.utils.TrackingNotificationHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.UnitHelper;
 
 import java.text.DecimalFormat;
@@ -77,6 +83,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
     private static final int TYPE_SUMMARY = 0;
     private static final int TYPE_DAY_CHART = 1;
     private static final int TYPE_CHART = 2;
+    private static final int TYPE_TRACKING_STATUS = 3;
     private final List<Object> mItems;
     private OnItemClickListener mItemClickListener;
 
@@ -96,6 +103,11 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         View v;
         ViewHolder vh;
         switch (viewType) {
+            case TYPE_TRACKING_STATUS:
+                v = LayoutInflater.from(parent.getContext())
+                        .inflate(R.layout.card_tracking_status, parent, false);
+                vh = new TrackingStatusViewHolder(v);
+                break;
             case TYPE_CHART:
                 v = LayoutInflater.from(parent.getContext())
                         .inflate(R.layout.card_activity_bar_chart, parent, false);
@@ -196,7 +208,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                     chartLineDataSet.setAxisDependency(YAxis.AxisDependency.LEFT);
                     chartLineDataSet.setLineWidth(1);
                     chartLineDataSet.setDrawCircles(false);
-                    chartLineDataSet.setColor(ContextCompat.getColor(barChartViewHolder.context, R.color.colorAccent), 200);
+                    chartLineDataSet.setColor(secondaryColor(barChartViewHolder.context), 200);
                     chartLineDataSet.setDrawValues(false);
                     lineDataSets.add(chartLineDataSet);
                 }
@@ -205,8 +217,8 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                 barData.setBarWidth(0.5f);
                 combinedData.setData(barData);
                 combinedData.setData(new LineData(lineDataSets));
-                barDataSet.setColor(ContextCompat.getColor(barChartViewHolder.context, R.color.colorPrimary));
-                barDataSetReachedDailyGoal.setColor(ContextCompat.getColor(barChartViewHolder.context, R.color.green));
+                barDataSet.setColor(primaryColor(barChartViewHolder.context));
+                barDataSetReachedDailyGoal.setColor(ContextCompat.getColor(barChartViewHolder.context, R.color.status_ok));
                 barChartViewHolder.mChart.setData(combinedData);
                 barChartViewHolder.mChart.getXAxis().setValueFormatter(new ArrayListAxisValueFormatter(barChartXValues));
                 barChartViewHolder.mChart.invalidate();
@@ -238,11 +250,11 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                         default:
                             dataMap = chartData.getSteps();
                             label = chartViewHolder.context.getString(R.string.steps);
-                            legendValues.put(ContextCompat.getColor(chartViewHolder.itemView.getContext(), R.color.colorAccent), chartViewHolder.context.getString(R.string.activity_summary_chart_legend_stepgoal));
+                            legendValues.put(secondaryColor(chartViewHolder.itemView.getContext()), chartViewHolder.context.getString(R.string.activity_summary_chart_legend_stepgoal));
                             break;
                     }
                 }
-                legendValues.put(ContextCompat.getColor(chartViewHolder.itemView.getContext(), R.color.colorPrimary), label);
+                legendValues.put(primaryColor(chartViewHolder.itemView.getContext()), label);
                 ArrayList<ILineDataSet> dataSets = new ArrayList<>();
                 float lastValue = 0;
                 float maxValue = 0;
@@ -295,7 +307,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                     chartLineDataSet.setAxisDependency(YAxis.AxisDependency.LEFT);
                     chartLineDataSet.setLineWidth(1);
                     chartLineDataSet.setDrawCircles(false);
-                    chartLineDataSet.setColor(ContextCompat.getColor(chartViewHolder.context, R.color.colorAccent), 200);
+                    chartLineDataSet.setColor(secondaryColor(chartViewHolder.context), 200);
                     chartLineDataSet.setDrawValues(false);
                     maxValue = Math.max(maxValue, chartData.getGoal());
                     dataSets.add(chartLineDataSet);
@@ -324,6 +336,9 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                 chartViewHolder.mChart.notifyDataSetChanged();
                 chartViewHolder.mChart.invalidate();
             break;
+            case TYPE_TRACKING_STATUS:
+                bindTrackingStatus((TrackingStatusViewHolder) holder);
+                break;
             case TYPE_SUMMARY:
                 ActivitySummary summaryData = (ActivitySummary) mItems.get(position);
                 SummaryViewHolder summaryViewHolder = (SummaryViewHolder) holder;
@@ -331,6 +346,13 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
                 UnitHelper.FormattedUnitPair calories = UnitHelper.formatCalories(summaryData.getCalories(), summaryViewHolder.itemView.getContext());
                 summaryViewHolder.mTitleTextView.setText(summaryData.getTitle());
                 summaryViewHolder.mStepsTextView.setText(String.valueOf(summaryData.getSteps()));
+                summaryViewHolder.mStepRing.setProgress(summaryData.getSteps(), summaryData.getGoal());
+                if (summaryData.getGoal() > 0) {
+                    summaryViewHolder.mGoalTextView.setText(summaryViewHolder.context.getString(R.string.goal_of_steps, summaryData.getGoal()));
+                    summaryViewHolder.mGoalTextView.setVisibility(View.VISIBLE);
+                } else {
+                    summaryViewHolder.mGoalTextView.setVisibility(View.GONE);
+                }
                 summaryViewHolder.mDistanceTextView.setText(distance.getValue());
                 summaryViewHolder.mDistanceTitleTextView.setText(distance.getUnit());
                 summaryViewHolder.mCaloriesTextView.setText(calories.getValue());
@@ -347,14 +369,84 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         }
     }
 
+    /**
+     * Shows the notification recovery banner below the step summary card, but only while the
+     * tracking notification is actually missing or notifications are disabled.
+     */
+    private void bindTrackingStatus(final TrackingStatusViewHolder holder) {
+        final int state = TrackingNotificationHelper.getState(holder.context);
+        if (state != TrackingNotificationHelper.STATE_MISSING
+                && state != TrackingNotificationHelper.STATE_NOTIFICATIONS_OFF) {
+            holder.itemView.setVisibility(View.GONE);
+            return;
+        }
+        holder.itemView.setVisibility(View.VISIBLE);
+        if (state == TrackingNotificationHelper.STATE_NOTIFICATIONS_OFF) {
+            holder.mStatusTextView.setText(R.string.tracking_status_notifications_off);
+            holder.mActionButton.setText(R.string.tracking_action_fix);
+        } else {
+            holder.mStatusTextView.setText(R.string.tracking_status_missing);
+            holder.mActionButton.setText(R.string.tracking_action_restore);
+        }
+        holder.mActionButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                if (!(holder.context instanceof Activity)) {
+                    return;
+                }
+                TrackingNotificationHelper.onBannerActionClicked((Activity) holder.context);
+                final int position = holder.getAdapterPosition();
+                if (position != RecyclerView.NO_POSITION) {
+                    // Give the service a moment to post the notification before re-checking.
+                    holder.itemView.postDelayed(new Runnable() {
+                        @Override
+                        public void run() {
+                            notifyItemChanged(position);
+                        }
+                    }, 1000L);
+                }
+            }
+        });
+    }
+
+    /**
+     * Styles a chart with the Material 3 colors of the current theme.
+     */
+    private void styleChart(com.github.mikephil.charting.charts.BarLineChartBase chart) {
+        Context context = chart.getContext();
+        int textColor = ThemeUtils.getThemeColor(context, com.google.android.material.R.attr.colorOnSurfaceVariant);
+        int gridColor = ContextCompat.getColor(context, R.color.divider);
+        chart.getXAxis().setPosition(XAxis.XAxisPosition.BOTTOM);
+        chart.getXAxis().setDrawGridLines(false);
+        chart.getXAxis().setTextColor(textColor);
+        chart.getAxisLeft().setTextColor(textColor);
+        chart.getAxisLeft().setGridColor(gridColor);
+        chart.getAxisLeft().setDrawAxisLine(false);
+        chart.getAxisRight().setEnabled(false);
+        chart.getLegend().setTextColor(textColor);
+        chart.setTouchEnabled(false);
+        chart.setDoubleTapToZoomEnabled(false);
+        chart.setPinchZoom(false);
+        chart.setDescription("");
+        chart.setExtraOffsets(8f, 8f, 8f, 8f);
+    }
+
+    private int primaryColor(Context context) {
+        return ThemeUtils.getThemeColor(context, androidx.appcompat.R.attr.colorPrimary);
+    }
+
+    private int secondaryColor(Context context) {
+        return ThemeUtils.getThemeColor(context, com.google.android.material.R.attr.colorSecondary);
+    }
+
     private LineDataSet getNewChartLineDataSet(Context context, String label){
         LineDataSet chartLineDataSet = new LineDataSet(new ArrayList<Entry>(), label);
         chartLineDataSet.setAxisDependency(YAxis.AxisDependency.LEFT);
         chartLineDataSet.setLineWidth(3);
         chartLineDataSet.setCircleRadius(3.5f);
         chartLineDataSet.setDrawCircleHole(false);
-        chartLineDataSet.setColor(ContextCompat.getColor(context, R.color.colorPrimary), 200);
-        chartLineDataSet.setCircleColor(ContextCompat.getColor(context, R.color.colorPrimary));
+        chartLineDataSet.setColor(primaryColor(context), 200);
+        chartLineDataSet.setCircleColor(primaryColor(context));
         chartLineDataSet.setDrawValues(false);
 
         return chartLineDataSet;
@@ -374,6 +466,8 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
             return TYPE_DAY_CHART;
         } else if (item instanceof ActivitySummary) {
             return TYPE_SUMMARY;
+        } else if (item instanceof TrackingStatus) {
+            return TYPE_TRACKING_STATUS;
         } else if (item instanceof ActivityChart) {
             return TYPE_CHART;
         } else {
@@ -413,6 +507,18 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         }
     }
 
+    public class TrackingStatusViewHolder extends ViewHolder {
+
+        public TextView mStatusTextView;
+        public Button mActionButton;
+
+        public TrackingStatusViewHolder(View itemView) {
+            super(itemView);
+            mStatusTextView = itemView.findViewById(R.id.tracking_status);
+            mActionButton = itemView.findViewById(R.id.tracking_action);
+        }
+    }
+
     public class SummaryViewHolder extends ViewHolder implements PopupMenu.OnMenuItemClickListener {
 
         public TextView mTitleTextView;
@@ -422,6 +528,8 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         public TextView mVelocityTextView;
         public TextView mDistanceTitleTextView;
         public TextView mCaloriesTitleTextView;
+        public TextView mGoalTextView;
+        public StepRingView mStepRing;
         public RelativeLayout mVelocityContainer;
         public ImageButton mPrevButton;
         public ImageButton mNextButton;
@@ -431,6 +539,8 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
             super(itemView);
             mTitleTextView = itemView.findViewById(R.id.period);
             mStepsTextView = itemView.findViewById(R.id.stepCount);
+            mStepRing = itemView.findViewById(R.id.stepRing);
+            mGoalTextView = itemView.findViewById(R.id.goalText);
             mDistanceTextView = itemView.findViewById(R.id.distanceCount);
             mCaloriesTextView = itemView.findViewById(R.id.calorieCount);
             mVelocityTextView = itemView.findViewById(R.id.speed);
@@ -556,12 +666,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         public ChartViewHolder(View itemView) {
             super(itemView);
             mChart = itemView.findViewById(R.id.chart);
-            mChart.getXAxis().setPosition(XAxis.XAxisPosition.BOTTOM);
-            mChart.getAxisRight().setEnabled(false);
-            mChart.setTouchEnabled(false);
-            mChart.setDoubleTapToZoomEnabled(false);
-            mChart.setPinchZoom(false);
-            mChart.setDescription("");
+            styleChart(mChart);
         }
     }
 
@@ -571,12 +676,7 @@ public class ReportAdapter extends RecyclerView.Adapter<ReportAdapter.ViewHolder
         public CombinedChartViewHolder(View itemView) {
             super(itemView);
             mChart = itemView.findViewById(R.id.chart);
-            mChart.getXAxis().setPosition(XAxis.XAxisPosition.BOTTOM);
-            mChart.getAxisRight().setEnabled(false);
-            mChart.setTouchEnabled(false);
-            mChart.setDoubleTapToZoomEnabled(false);
-            mChart.setPinchZoom(false);
-            mChart.setDescription("");
+            styleChart(mChart);
             mChart.setDrawOrder(new CombinedChart.DrawOrder[]{
                     CombinedChart.DrawOrder.BAR, CombinedChart.DrawOrder.BUBBLE, CombinedChart.DrawOrder.CANDLE, CombinedChart.DrawOrder.LINE, CombinedChart.DrawOrder.SCATTER
             });

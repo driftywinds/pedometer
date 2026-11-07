@@ -50,6 +50,7 @@ import org.secuso.privacyfriendlyactivitytracker.adapters.ReportAdapter;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityChartDataSet;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivityDayChart;
 import org.secuso.privacyfriendlyactivitytracker.models.ActivitySummary;
+import org.secuso.privacyfriendlyactivitytracker.models.TrackingStatus;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
 import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
@@ -443,6 +444,8 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         if (activitySummary == null) {
             activitySummary = new ActivitySummary(stepCount, distance, calories, simpleDateFormat.format(day.getTime()));
             reports.add(activitySummary);
+            // The notification banner is shown right below the step summary card.
+            reports.add(new TrackingStatus());
         } else {
             activitySummary.setSteps(stepCount);
             activitySummary.setDistance(distance);
@@ -470,6 +473,7 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         }
         String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
         activityChart.setGoal(Integer.valueOf(d));
+        activitySummary.setGoal(Integer.valueOf(d));
 
         // notify ui
         if (mAdapter != null && mRecyclerView != null && getActivity() != null) {

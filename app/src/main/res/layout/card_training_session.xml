@@ -23,15 +23,19 @@
     android:clickable="true"
     android:orientation="vertical">
 
-    <androidx.cardview.widget.CardView xmlns:card_view="http://schemas.android.com/apk/res-auto"
+    <com.google.android.material.card.MaterialCardView xmlns:app="http://schemas.android.com/apk/res-auto"
         android:id="@+id/card_training_session"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="center"
-        android:layout_marginBottom="@dimen/cardview_default_margin"
-        android:layout_marginLeft="@dimen/cardview_default_margin"
-        android:layout_marginRight="@dimen/cardview_default_margin"
-        card_view:cardCornerRadius="4dp">
+        android:layout_marginBottom="12dp"
+        android:layout_marginLeft="12dp"
+        android:layout_marginRight="12dp"
+        app:cardBackgroundColor="@color/card_background"
+        app:cardCornerRadius="18dp"
+        app:cardElevation="0dp"
+        app:strokeColor="@color/card_stroke"
+        app:strokeWidth="1dp">
 
         <RelativeLayout
             android:id="@+id/card_training_session_small"
@@ -67,7 +71,7 @@
                             android:paddingRight="4dp"
                             android:paddingStart="4dp"
                             android:singleLine="true"
-                            android:textColor="@color/colorPrimary"
+                            android:textColor="?attr/colorPrimary"
                             android:textSize="16sp"/>
 
                         <LinearLayout
@@ -81,7 +85,7 @@
                                 android:layout_height="wrap_content"
                                 android:layout_marginLeft="8dp"
                                 android:layout_marginStart="8dp"
-                                android:textColor="@color/darkgrey" />
+                                android:textColor="@color/text_secondary" />
 
                             <TextView
                                 android:id="@+id/textView10"
@@ -114,7 +118,7 @@
                                 android:layout_alignParentTop="true"
                                 android:layout_toLeftOf="@+id/distance_title_small"
                                 android:layout_toStartOf="@+id/distance_title_small"
-                                android:textColor="@color/darkgrey" />
+                                android:textColor="@color/text_secondary" />
 
                             <TextView
                                 android:id="@+id/distance_title_small"
@@ -143,7 +147,7 @@
                                 android:layout_alignParentTop="true"
                                 android:layout_toLeftOf="@+id/textView"
                                 android:layout_toStartOf="@+id/textView"
-                                android:textColor="@color/darkgrey" />
+                                android:textColor="@color/text_secondary" />
 
                             <TextView
                                 android:id="@+id/textView"
@@ -170,7 +174,7 @@
                 android:layout_alignParentLeft="true"
                 android:layout_alignParentStart="true"
                 android:layout_below="@+id/relativeLayout3"
-                android:background="#20000000" />
+                android:background="@color/divider" />
         </RelativeLayout>
 
         <LinearLayout
@@ -262,7 +266,7 @@
                             android:layout_marginStart="8dp"
                             android:layout_toEndOf="@+id/distanceIcon"
                             android:layout_toRightOf="@+id/distanceIcon"
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/distanceTitle"
@@ -274,7 +278,7 @@
                             android:layout_toEndOf="@+id/training_card_distance"
                             android:layout_toRightOf="@+id/training_card_distance"
                             android:text="@string/training_card_distance_km"
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
                     </RelativeLayout>
 
                     <RelativeLayout
@@ -301,7 +305,7 @@
                             android:layout_toEndOf="@+id/calorieIcon"
                             android:layout_toRightOf="@+id/calorieIcon"
                             android:text=""
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/calorieTitle"
@@ -313,7 +317,7 @@
                             android:layout_toEndOf="@+id/training_card_calories"
                             android:layout_toRightOf="@+id/training_card_calories"
                             android:text="@string/training_card_calories"
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
                     </RelativeLayout>
 
 
@@ -341,7 +345,7 @@
                             android:layout_toEndOf="@+id/imageView"
                             android:layout_toRightOf="@+id/imageView"
                             android:text=""
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
 
                         <TextView
                             android:id="@+id/textView6"
@@ -353,7 +357,7 @@
                             android:layout_toEndOf="@+id/training_card_duration"
                             android:layout_toRightOf="@+id/training_card_duration"
                             android:text="@string/training_card_duration"
-                            android:textColor="@color/darkgrey" />
+                            android:textColor="@color/text_secondary" />
                     </RelativeLayout>
 
                 </LinearLayout>
@@ -362,7 +366,7 @@
             <View
                 android:layout_width="fill_parent"
                 android:layout_height="1dp"
-                android:background="#20000000" />
+                android:background="@color/divider" />
 
             <LinearLayout
                 style="@style/CardViewBody"
@@ -375,7 +379,7 @@
                     android:layout_height="wrap_content" />
             </LinearLayout>
         </LinearLayout>
-    </androidx.cardview.widget.CardView>
+    </com.google.android.material.card.MaterialCardView>
 
 
 </LinearLayout>

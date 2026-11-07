@@ -9,6 +9,8 @@ import androidx.annotation.NonNull;
 import androidx.multidex.MultiDexApplication;
 import androidx.work.Configuration;
 
+import com.google.android.material.color.DynamicColors;
+
 import org.secuso.privacyfriendlyactivitytracker.backup.BackupCreator;
 import org.secuso.privacyfriendlyactivitytracker.backup.BackupRestorer;
 import org.secuso.privacyfriendlybackup.api.pfa.BackupManager;
@@ -21,6 +23,8 @@ public class PFAPedometerApplication extends MultiDexApplication implements Conf
     @Override
     public void onCreate() {
         super.onCreate();
+        // Material You: use the wallpaper based color palette on Android 12+.
+        DynamicColors.applyToActivitiesIfAvailable(this);
         BackupManager.setBackupCreator(new BackupCreator());
         BackupManager.setBackupRestorer(new BackupRestorer());
     }

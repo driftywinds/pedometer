@@ -28,6 +28,10 @@ public class ActivitySummary {
     private String title;
     private Float currentSpeed = null;
     /**
+     * Step goal of the displayed period (0 if no goal should be shown).
+     */
+    private int goal = 0;
+    /**
      * Does the period of time has successors?
      */
     private boolean hasSuccessor;
@@ -101,5 +105,13 @@ public class ActivitySummary {
 
     public void setCurrentSpeed(Float currentSpeed) {
         this.currentSpeed = currentSpeed;
+    }
+
+    public int getGoal() {
+        return goal;
+    }
+
+    public void setGoal(int goal) {
+        this.goal = goal;
     }
 }

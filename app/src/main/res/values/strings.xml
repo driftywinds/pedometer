@@ -47,6 +47,8 @@
     <string name="day">Day</string>
     <string name="steps">Steps</string>
     <string name="calories">calories</string>
+    <string name="goal_of_steps">of %1$d steps</string>
+    <string name="summary_speed">Speed</string>
     <string name="activity_summary_subtitle">Summary of activities</string>
     <string name="activity_chart_summary_subtitle">Detailed summary of your activities</string>
     <string name="summary_card_kilocalories">kcal</string>

@@ -15,6 +15,17 @@
 * Fix restoring of the hardware step counter, hardware frequency, widget and wake lock
   preferences in backups.
 
+### UI modernization
+
+* Material 3 design system with a light and a dark theme, dynamic colors on Android 12+
+  and an Android 12+ splash screen.
+* New home dashboard: step summary card with an animated step goal ring and distance,
+  calorie and speed chips.
+* Restyled app bars, navigation drawer header, tabs, cards and charts for both themes.
+* The notification recovery banner moved from the top of the home screen to a compact
+  card below the step summary card; it only appears when the notification is actually
+  missing or notifications are disabled. The overflow menu keeps the restore action.
+
 <a name="v3.1.0"></a>
 ## [Pedometer (Privacy Friendly) v3.1.0](https://github.com/SecUSo/privacy-friendly-pedometer/releases/tag/v3.1.0) - 23 Jan 2024
 

@@ -46,7 +46,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_centerInParent="true"
-                    android:textColor="@color/darkgrey"
+                    android:textColor="@color/text_secondary"
                     android:textIsSelectable="false"
                     android:textSize="39sp" />
 
@@ -76,7 +76,7 @@
                         android:layout_toEndOf="@+id/imageView8"
                         android:layout_toRightOf="@+id/imageView8"
                         android:text="@string/steps"
-                        android:textColor="@color/darkgrey" />
+                        android:textColor="@color/text_secondary" />
                     <TextView
                         android:id="@+id/textView19"
                         android:layout_width="wrap_content"
@@ -87,7 +87,7 @@
                         android:text="@string/since"
                         android:layout_marginLeft="2sp"
                         android:layout_marginStart="2sp"
-                        android:textColor="@color/darkgrey" />
+                        android:textColor="@color/text_secondary" />
                     <TextView
                         android:id="@+id/training_card_since"
                         android:layout_width="wrap_content"
@@ -97,7 +97,7 @@
                         android:layout_toRightOf="@+id/textView19"
                         android:layout_marginLeft="2sp"
                         android:layout_marginStart="2sp"
-                        android:textColor="@color/darkgrey" />
+                        android:textColor="@color/text_secondary" />
                 </RelativeLayout>
             </RelativeLayout>
         </RelativeLayout>
@@ -128,7 +128,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_centerInParent="true"
-                    android:textColor="@color/darkgrey"
+                    android:textColor="@color/text_secondary"
                     android:textSize="25sp" />
 
                 <RelativeLayout
@@ -155,7 +155,7 @@
                         android:layout_toEndOf="@+id/imageView2"
                         android:layout_toRightOf="@+id/imageView2"
                         android:text="@string/training_card_calories"
-                        android:textColor="@color/darkgrey" />
+                        android:textColor="@color/text_secondary" />
                 </RelativeLayout>
             </RelativeLayout>
         </RelativeLayout>
@@ -176,7 +176,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_centerInParent="true"
-                    android:textColor="@color/darkgrey"
+                    android:textColor="@color/text_secondary"
                     android:textSize="25sp" />
 
                 <RelativeLayout
@@ -203,7 +203,7 @@
                         android:layout_toEndOf="@+id/imageView4"
                         android:layout_toRightOf="@+id/imageView4"
                         android:text="@string/training_card_distance_km"
-                        android:textColor="@color/darkgrey" />
+                        android:textColor="@color/text_secondary" />
                 </RelativeLayout>
             </RelativeLayout>
         </RelativeLayout>
@@ -224,7 +224,7 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:layout_centerInParent="true"
-                    android:textColor="@color/darkgrey"
+                    android:textColor="@color/text_secondary"
                     android:textSize="25sp" />
 
                 <RelativeLayout
@@ -248,7 +248,7 @@
                         android:layout_width="wrap_content"
                         android:layout_height="wrap_content"
                         android:text="@string/training_card_duration"
-                        android:textColor="@color/darkgrey"
+                        android:textColor="@color/text_secondary"
                         android:layout_centerVertical="true"
                         android:layout_toRightOf="@+id/imageView3"
                         android:layout_toEndOf="@+id/imageView3" />

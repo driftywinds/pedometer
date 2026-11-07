@@ -17,17 +17,55 @@
     along with this program. If not, see <http://www.gnu.org/licenses/>.
 -->
 <resources>
-    <color name="darkgrey">#757575</color>
+    <!-- Brand colors. These stay identical in dark mode because they are also used by
+         RemoteViews (widgets) and the tutorial, which cannot resolve theme attributes. -->
     <color name="colorPrimary">#024265</color>
     <color name="colorPrimaryDark">#024265</color>
     <color name="colorAccent">#0274B2</color>
-    <color name="transparent">#00000000</color>
-    <color name="white">#ffffff</color>
-    <color name="black">#000000</color>
-    <color name="middlegrey">#A8A8A8</color>
     <color name="yellow">#f6d126</color>
     <color name="green">#388E3C</color>
+
+    <!-- Legacy names, kept so old layouts keep working. Prefer the semantic colors below. -->
+    <color name="darkgrey">#757575</color>
+    <color name="middlegrey">#A8A8A8</color>
+    <color name="white">#ffffff</color>
+    <color name="black">#000000</color>
+    <color name="transparent">#00000000</color>
+
+    <!-- Material 3 color roles (light theme). Dark theme values live in values-night/colors.xml -->
+    <color name="m3_primary">#024265</color>
+    <color name="m3_on_primary">#FFFFFF</color>
+    <color name="m3_primary_container">#C9E6FF</color>
+    <color name="m3_on_primary_container">#001E2F</color>
+    <color name="m3_secondary">#0274B2</color>
+    <color name="m3_on_secondary">#FFFFFF</color>
+    <color name="m3_secondary_container">#CFE5FF</color>
+    <color name="m3_on_secondary_container">#001D33</color>
+    <color name="m3_tertiary">#2E6B34</color>
+    <color name="m3_on_tertiary">#FFFFFF</color>
+    <color name="m3_tertiary_container">#AFF5B0</color>
+    <color name="m3_on_tertiary_container">#00210A</color>
+    <color name="m3_error">#BA1A1A</color>
+    <color name="m3_on_error">#FFFFFF</color>
+    <color name="m3_error_container">#FFDAD6</color>
+    <color name="m3_on_error_container">#410002</color>
+    <color name="m3_background">#F7FAFD</color>
+    <color name="m3_on_background">#181C1F</color>
+    <color name="m3_surface">#F7FAFD</color>
+    <color name="m3_on_surface">#181C1F</color>
+    <color name="m3_surface_variant">#DCE3EA</color>
+    <color name="m3_on_surface_variant">#41484E</color>
+    <color name="m3_outline">#71787E</color>
+
+    <!-- Semantic colors used by layouts. They have light and dark variants. -->
+    <color name="text_primary">#181C1F</color>
+    <color name="text_secondary">#41484E</color>
+    <color name="card_background">#FFFFFF</color>
     <color name="card_stroke">#1F000000</color>
+    <color name="divider">#1F000000</color>
+    <color name="pill_background">#EDF3F8</color>
+    <color name="on_primary_text">#FFFFFF</color>
+    <color name="ring_track">#DCE4EB</color>
     <color name="status_ok">#2E7D32</color>
     <color name="status_warning">#C62828</color>
 

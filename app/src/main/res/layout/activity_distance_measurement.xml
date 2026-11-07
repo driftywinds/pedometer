@@ -59,7 +59,7 @@
                     android:layout_centerInParent="true"
                     android:layout_toEndOf="@+id/imageView4"
                     android:layout_toRightOf="@+id/imageView4"
-                    android:textColor="@color/darkgrey"
+                    android:textColor="@color/text_secondary"
                     android:textSize="39sp" />
 
                 <TextView
@@ -72,7 +72,7 @@
                     android:layout_toEndOf="@+id/distance"
                     android:layout_toRightOf="@+id/distance"
                     android:text="@string/training_card_distance_km"
-                    android:textColor="@color/darkgrey" />
+                    android:textColor="@color/text_secondary" />
             </RelativeLayout>
         </RelativeLayout>
 
