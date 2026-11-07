@@ -40,7 +40,7 @@
         <item name="colorOnError">@color/m3_on_error</item>
         <item name="colorErrorContainer">@color/m3_error_container</item>
         <item name="colorOnErrorContainer">@color/m3_on_error_container</item>
-        <item name="colorBackground">@color/m3_background</item>
+        <item name="android:colorBackground">@color/m3_background</item>
         <item name="colorOnBackground">@color/m3_on_background</item>
         <item name="colorSurface">@color/m3_surface</item>
         <item name="colorOnSurface">@color/m3_on_surface</item>
