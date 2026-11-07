@@ -18,7 +18,7 @@
 <resources>
 
     <!-- Android 12+ uses the system splash screen API. -->
-    <style name="SplashTheme" parent="@android:style/Theme.NoTitleBar.Fullscreen">
+    <style name="SplashTheme" parent="Theme.Material3.Light.NoActionBar">
         <item name="android:windowBackground">@drawable/splash_screen</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowSplashScreenBackground">@color/colorPrimary</item>

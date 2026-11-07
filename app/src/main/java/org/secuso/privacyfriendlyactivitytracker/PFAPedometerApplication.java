@@ -24,7 +24,10 @@ public class PFAPedometerApplication extends MultiDexApplication implements Conf
     public void onCreate() {
         super.onCreate();
         // Material You: use the wallpaper based color palette on Android 12+.
-        DynamicColors.applyToActivitiesIfAvailable(this);
+        // Skip activities whose theme does not declare a dynamic color overlay (for example the
+        // splash screen theme). Material's DynamicColors would otherwise call Theme#applyStyle
+        // with resource id 0 and crash with Resources.NotFoundException.
+        DynamicColors.applyToActivitiesIfAvailable(this, (activity, themeResId) -> themeResId != 0);
         BackupManager.setBackupCreator(new BackupCreator());
         BackupManager.setBackupRestorer(new BackupRestorer());
     }

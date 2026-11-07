@@ -63,4 +63,9 @@
 
     <style name="AppTheme.PopupOverlay" parent="ThemeOverlay.Material3.Dark" />
 
+    <style name="SplashTheme" parent="Theme.Material3.Dark.NoActionBar">
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+
 </resources>
