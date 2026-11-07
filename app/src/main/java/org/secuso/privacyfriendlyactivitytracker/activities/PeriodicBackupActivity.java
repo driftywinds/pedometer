@@ -18,6 +18,7 @@
 package org.secuso.privacyfriendlyactivitytracker.activities;
 
 import android.content.ActivityNotFoundException;
+import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
@@ -31,6 +32,8 @@ import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -45,13 +48,13 @@ import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 public class PeriodicBackupActivity extends AppCompatActivity {
 
     private static final String TAG = PeriodicBackupActivity.class.getSimpleName();
-    private static final int REQUEST_TREE = 41;
 
     private TextView locationSummary;
     private TextView nextBackupSummary;
     private RadioGroup intervalGroup;
     private Spinner keepSpinner;
     private MaterialSwitch enableSwitch;
+    private ActivityResultLauncher<Uri> folderPicker;
 
     private boolean binding;
     private boolean pendingEnable;
@@ -60,6 +63,9 @@ public class PeriodicBackupActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_periodic_backup);
+
+        folderPicker = registerForActivityResult(new PersistentTreePicker(),
+                this::onFolderPicked);
 
         ActionBar actionBar = getSupportActionBar();
         if (actionBar != null) {
@@ -216,13 +222,8 @@ public class PeriodicBackupActivity extends AppCompatActivity {
             Toast.makeText(this, R.string.periodic_backup_unsupported, Toast.LENGTH_LONG).show();
             return;
         }
-        Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
-        intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
-                | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
-                | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
         try {
-            startActivityForResult(intent, REQUEST_TREE);
+            folderPicker.launch(null);
         } catch (ActivityNotFoundException e) {
             Log.e(TAG, "No document tree picker available.", e);
             Toast.makeText(this, R.string.periodic_backup_error, Toast.LENGTH_LONG).show();
@@ -243,31 +244,26 @@ public class PeriodicBackupActivity extends AppCompatActivity {
         }, "pedometer-periodic-backup-now").start();
     }
 
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != REQUEST_TREE) {
+    private void onFolderPicked(Uri treeUri) {
+        if (treeUri == null) {
+            pendingEnable = false;
+            updateNextBackup();
             return;
         }
-        if (resultCode == RESULT_OK && data != null && data.getData() != null) {
-            Uri treeUri = data.getData();
-            try {
-                getContentResolver().takePersistableUriPermission(treeUri,
-                        Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
-            } catch (Exception e) {
-                Log.w(TAG, "Could not persist the folder permission.", e);
-            }
-            PeriodicBackupManager.setTreeUri(this, treeUri.toString());
-            updateLocation();
-            if (pendingEnable) {
-                pendingEnable = false;
-                binding = true;
-                enableSwitch.setChecked(true);
-                binding = false;
-                PeriodicBackupManager.setEnabled(this, true);
-            }
-        } else {
+        try {
+            getContentResolver().takePersistableUriPermission(treeUri,
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+        } catch (Exception e) {
+            Log.w(TAG, "Could not persist the folder permission.", e);
+        }
+        PeriodicBackupManager.setTreeUri(this, treeUri.toString());
+        updateLocation();
+        if (pendingEnable) {
             pendingEnable = false;
+            binding = true;
+            enableSwitch.setChecked(true);
+            binding = false;
+            PeriodicBackupManager.setEnabled(this, true);
         }
         updateNextBackup();
     }
@@ -280,4 +276,19 @@ public class PeriodicBackupActivity extends AppCompatActivity {
         }
         return super.onOptionsItemSelected(item);
     }
+    /**
+     * Tree picker that also requests persisted read/write access to the selected folder.
+     */
+    private static class PersistentTreePicker extends ActivityResultContracts.OpenDocumentTree {
+        @Override
+        public Intent createIntent(Context context, Uri input) {
+            Intent intent = super.createIntent(context, input);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION
+                    | Intent.FLAG_GRANT_WRITE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION
+                    | Intent.FLAG_GRANT_PREFIX_URI_PERMISSION);
+            return intent;
+        }
+    }
+
 }

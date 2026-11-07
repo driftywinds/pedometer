@@ -149,17 +149,31 @@ public final class PeriodicBackupManager {
         if (tree == null || !isSupported()) {
             return null;
         }
-        try (Cursor cursor = context.getContentResolver().query(
-                Uri.parse(tree),
-                new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
-                null, null, null)) {
-            if (cursor != null && cursor.moveToFirst()) {
-                return cursor.getString(0);
+        Uri treeUri = Uri.parse(tree);
+        try {
+            Uri documentUri = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+            try (Cursor cursor = context.getContentResolver().query(
+                    documentUri,
+                    new String[]{DocumentsContract.Document.COLUMN_DISPLAY_NAME},
+                    null, null, null)) {
+                if (cursor != null && cursor.moveToFirst()) {
+                    String name = cursor.getString(0);
+                    if (name != null && !name.isEmpty()) {
+                        return name;
+                    }
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "Could not read the backup folder name.", e);
         }
-        return null;
+        // Fall back to the document id, e.g. "primary:Download".
+        String documentId = null;
+        try {
+            documentId = DocumentsContract.getTreeDocumentId(treeUri);
+        } catch (Exception ignored) {
+        }
+        return documentId != null ? documentId : treeUri.getLastPathSegment();
     }
 
     /** Summary for the settings preference. */
@@ -329,7 +343,9 @@ public final class PeriodicBackupManager {
         String fileName = BACKUP_FILE_PREFIX + fileFormat.format(new Date()) + ".json";
         Uri document = null;
         try {
-            document = DocumentsContract.createDocument(resolver, treeUri, "application/json", fileName);
+            Uri parent = DocumentsContract.buildDocumentUriUsingTree(
+                    treeUri, DocumentsContract.getTreeDocumentId(treeUri));
+            document = DocumentsContract.createDocument(resolver, parent, "application/json", fileName);
             if (document == null) {
                 return false;
             }
