@@ -31,6 +31,7 @@ import android.widget.RelativeLayout;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -189,7 +190,7 @@ public class TrainingOverviewActivity extends AppCompatActivity implements Train
      * @param position if it's an update give the position in array of the element which should be updated else null
      */
     protected void showEditDialog(final Integer position) {
-        AlertDialog.Builder alert = new AlertDialog.Builder(TrainingOverviewActivity.this, R.style.AppTheme_Dialog);
+        AlertDialog.Builder alert = new MaterialAlertDialogBuilder(TrainingOverviewActivity.this);
         LayoutInflater inflater = getLayoutInflater();
         final View dialogLayout = inflater.inflate(R.layout.dialog_training, null);
         final EditText edittext = dialogLayout.findViewById(R.id.input_name);

@@ -47,6 +47,7 @@ import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.core.app.ActivityCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
@@ -261,7 +262,7 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
             final Uri uri = resultData.getData();
             if (uri != null) {
                 // Importing replaces all current data - ask the user before touching anything.
-                new AlertDialog.Builder(this)
+                new MaterialAlertDialogBuilder(this)
                         .setTitle(R.string.import_backup_confirm_title)
                         .setMessage(R.string.import_backup_confirm_message)
                         .setPositiveButton(R.string.import_backup_confirm_action, (dialog, which) -> importBackup(uri))

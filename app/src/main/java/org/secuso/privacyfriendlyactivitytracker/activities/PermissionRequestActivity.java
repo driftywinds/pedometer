@@ -10,6 +10,7 @@ import android.util.Log;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 
@@ -34,13 +35,13 @@ public class PermissionRequestActivity extends AppCompatActivity {
                 alreadyAskedForActivityRecognition++;
                 if (alreadyAskedForActivityRecognition > 1) {
                     Log.d(TAG, "Activity recognition permission was still not granted, showing final dialog");
-                    new AlertDialog.Builder(this)
+                    new MaterialAlertDialogBuilder(this)
                             .setMessage(R.string.dialog_permission_activity_recognition_2)
                             .setPositiveButton(android.R.string.ok, (dialog, which) -> finish())
                             .show();
                 } else {
                     Log.d(TAG, "Activity recognition permission was not granted, showing dialog");
-                    new AlertDialog.Builder(this)
+                    new MaterialAlertDialogBuilder(this)
                             .setMessage(R.string.dialog_permission_activity_recognition)
                             .setPositiveButton(android.R.string.ok, (dialog, which) -> multiplePermissionLauncher.launch(PERMISSIONS))
                             .show();

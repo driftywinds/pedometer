@@ -51,6 +51,7 @@
         <item name="colorAccent">@color/m3_secondary</item>
 
         <item name="android:alertDialogTheme">@style/AppTheme.AlertDialog</item>
+        <item name="materialAlertDialogTheme">@style/ThemeOverlay.Material3.MaterialAlertDialog</item>
     </style>
 
     <style name="AppTheme.Dialog" parent="Theme.AppCompat.Dialog.Alert">

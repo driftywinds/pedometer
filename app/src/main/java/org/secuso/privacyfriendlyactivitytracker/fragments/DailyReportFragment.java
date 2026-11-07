@@ -42,6 +42,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.jetbrains.annotations.NotNull;
 import org.secuso.privacyfriendlyactivitytracker.Factory;
@@ -599,7 +600,7 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
             WalkingMode walkingMode = menuWalkingModes.get(id);
             WalkingModePersistenceHelper.setActiveMode(walkingMode, getContext());
         }else if(id == menuCorrectStepId){
-            AlertDialog.Builder alert = new AlertDialog.Builder(this.getContext(), R.style.AppTheme_Dialog);
+            AlertDialog.Builder alert = new MaterialAlertDialogBuilder(this.getContext());
             LayoutInflater inflater = getActivity().getLayoutInflater();
             final View dialogLayout = inflater.inflate(R.layout.dialog_correct_steps, null);
             final EditText edittext = dialogLayout.findViewById(R.id.steps);

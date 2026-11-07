@@ -24,6 +24,7 @@ import android.preference.PreferenceManager;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AlertDialog;
+import com.google.android.material.dialog.MaterialAlertDialogBuilder;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
 import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
@@ -97,7 +98,7 @@ public final class TrackingNotificationHelper {
     }
 
     private static void showNotificationsOffDialog(Activity activity) {
-        new AlertDialog.Builder(activity)
+        new MaterialAlertDialogBuilder(activity)
                 .setTitle(R.string.tracking_notifications_off_title)
                 .setMessage(R.string.tracking_notifications_off_message)
                 .setPositiveButton(R.string.tracking_open_settings, (dialog, which) -> {
