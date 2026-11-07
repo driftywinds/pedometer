@@ -31,6 +31,8 @@ import android.service.notification.StatusBarNotification;
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
 
+import java.util.List;
+
 /**
  * Helper methods around the permanent step count notification.
  * <p>
@@ -98,7 +100,7 @@ public final class NotificationHelper {
     public static boolean isNotificationVisible(Context context, int notificationId) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
             try {
-                StatusBarNotification[] notifications =
+                List<StatusBarNotification> notifications =
                         NotificationManagerCompat.from(context).getActiveNotifications();
                 for (StatusBarNotification notification : notifications) {
                     if (notification.getId() == notificationId) {
