@@ -17,11 +17,15 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.activities;
 
+import android.content.BroadcastReceiver;
+import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
 
 import androidx.fragment.app.FragmentTransaction;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
 import org.secuso.privacyfriendlyactivitytracker.fragments.DailyReportFragment;
@@ -39,6 +43,24 @@ import org.secuso.privacyfriendlyactivitytracker.tutorial.TutorialActivity;
 
 public class MainActivity extends BaseActivity implements DailyReportFragment.OnFragmentInteractionListener, WeeklyReportFragment.OnFragmentInteractionListener, MonthlyReportFragment.OnFragmentInteractionListener {
 
+    /**
+     * Broadcast action which is sent when all local data was replaced by an imported backup.
+     * The visible reports have to be rebuilt in that case.
+     */
+    public static final String BROADCAST_ACTION_DATA_REPLACED = "org.secuso.privacyfriendlyactivitytracker.action.DATA_REPLACED";
+
+    private final BroadcastReceiver dataReplacedReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            if (isFinishing() || isDestroyed()) {
+                return;
+            }
+            // Rebuild the home view so that all reports are read from the imported data.
+            getSupportFragmentManager().beginTransaction()
+                    .replace(R.id.content_frame, new MainFragment(), "MainFragment")
+                    .commitAllowingStateLoss();
+        }
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -52,11 +74,20 @@ public class MainActivity extends BaseActivity implements DailyReportFragment.On
         PreferenceManager.setDefaultValues(this, R.xml.pref_general, false);
         PreferenceManager.setDefaultValues(this, R.xml.pref_notification, false);
 
+        LocalBroadcastManager.getInstance(this).registerReceiver(dataReplacedReceiver,
+                new IntentFilter(BROADCAST_ACTION_DATA_REPLACED));
+
         // Load first view
         final FragmentTransaction fragmentTransaction = getSupportFragmentManager().beginTransaction();
         fragmentTransaction.replace(R.id.content_frame, new MainFragment(), "MainFragment");
         fragmentTransaction.commit();
 
+    }
+
+    @Override
+    protected void onDestroy() {
+        LocalBroadcastManager.getInstance(this).unregisterReceiver(dataReplacedReceiver);
+        super.onDestroy();
     }
 
     @Override

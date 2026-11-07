@@ -106,6 +106,17 @@
         android:summary="@string/pref_summary_export_data"
         android:key="@string/pref_export_data" />
 
+    <PreferenceCategory android:title="@string/pref_group_title_data_backup">
+        <Preference
+            android:key="@string/pref_export_backup"
+            android:summary="@string/pref_summary_export_backup"
+            android:title="@string/pref_title_export_backup" />
+        <Preference
+            android:key="@string/pref_import_backup"
+            android:summary="@string/pref_summary_import_backup"
+            android:title="@string/pref_title_import_backup" />
+    </PreferenceCategory>
+
     <PreferenceCategory android:title="@string/pref_group_title_personal_settings">
         <EditTextPreference
             android:defaultValue="@string/pref_default_daily_step_goal"

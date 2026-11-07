@@ -76,6 +76,10 @@ public class StepCountPersistenceReceiver extends WakefulBroadcastReceiver {
         if(oldWalkingMode == null){
             oldWalkingMode = WalkingModePersistenceHelper.getActiveMode(context);
         }
+        // Make sure the step detector is running and its foreground notification is shown.
+        // Binding alone would only create the service temporarily, and it would be destroyed
+        // again after the steps were stored - leaving the app without its tracking notification.
+        StepDetectionServiceHelper.startAllIfEnabled(this.context);
         // bind to service
         Intent serviceIntent = new Intent(context, Factory.getStepDetectorServiceClass(context));
         context.getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);

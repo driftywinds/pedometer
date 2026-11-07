@@ -28,4 +28,9 @@
         android:icon="@android:drawable/ic_media_play"
         android:title="@string/continue_step_detection"
         app:showAsAction="always" />
+    <item
+        android:id="@+id/menu_restore_notification"
+        android:icon="@drawable/ic_notifications_black_24dp"
+        android:title="@string/menu_restore_notification"
+        app:showAsAction="never" />
 </menu>

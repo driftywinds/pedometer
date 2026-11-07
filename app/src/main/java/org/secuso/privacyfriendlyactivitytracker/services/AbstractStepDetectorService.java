@@ -77,6 +77,12 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
      */
     public static final String EXTENDED_DATA_TOTAL_STEPS = "org.secuso.privacyfriendlystepcounter.TOTAL_STEPS";
     /**
+     * Action which asks a running step detector service to (re-)post its permanent notification.
+     * This is used by the "force notification" control on the home screen to recover the
+     * notification (and with it the foreground state of the service) after it was lost.
+     */
+    public static final String ACTION_FORCE_NOTIFICATION = "org.secuso.privacyfriendlyactivitytracker.action.FORCE_NOTIFICATION";
+    /**
      * The notification id used for permanent step count notification
      */
     public static String CHANNEL_ID = "pedometer";
@@ -189,10 +195,19 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
                 .setSmallIcon(R.drawable.ic_stat_directions_walk);
         mBuilder.setContentIntent(pIntent);
-        mBuilder.setProgress(this.dailyStepGoal, totalSteps, false);
+        if (this.dailyStepGoal > 0) {
+            mBuilder.setProgress(this.dailyStepGoal, totalSteps, false);
+        }
         mBuilder.setVisibility(NotificationCompat.VISIBILITY_SECRET);
         mBuilder.setPriority(NotificationCompat.PRIORITY_MIN);
         mBuilder.setSilent(true);
+        // The service relies on this notification to stay in the foreground. Making it
+        // ongoing prevents (accidental) dismissal that would leave the step counter
+        // running "headless" until the next update.
+        mBuilder.setOngoing(true);
+        mBuilder.setAutoCancel(false);
+        mBuilder.setShowWhen(false);
+        mBuilder.setCategory(NotificationCompat.CATEGORY_SERVICE);
         return mBuilder.build();
     }
 
@@ -216,7 +231,16 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
     @Override
     public void onCreate() {
         createNotificationChannel();
-        startForeground(NOTIFICATION_ID, buildNotification(this.stepCountFromTotalSteps()));
+        try {
+            startForeground(NOTIFICATION_ID, buildNotification(this.stepCountFromTotalSteps()));
+        } catch (RuntimeException e) {
+            // This can happen if the system does not allow starting a foreground service
+            // (e.g. a missing notification permission or a revoked activity recognition
+            // permission on Android 14). In that case we stop ourselves instead of crashing
+            // the whole application; the user can restore tracking from the home screen.
+            Log.e(LOG_TAG, "Could not start the foreground notification.", e);
+            stopSelf();
+        }
         super.onCreate();
         Log.i(LOG_TAG, "Creating service cycle."+ this.getClass().getName());
     }
@@ -291,6 +315,15 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         // load step count from database
         getStepsAtLastSave();
 
+        boolean forceNotification = intent != null && ACTION_FORCE_NOTIFICATION.equals(intent.getAction());
+        // Refresh the notification so that it always reflects the current step goal and step
+        // count. This also re-posts it when the system restarted the service in the background
+        // and when the user explicitly asked for it from the home screen.
+        updateNotification();
+        if (forceNotification) {
+            Log.i(LOG_TAG, "Permanent notification was force-triggered.");
+        }
+
         return START_STICKY;
     }
 
@@ -346,6 +379,13 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
      * Updates or creates the progress notification
      */
     protected void updateNotification() {
+        if (mNotifyManager == null) {
+            mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        }
+        if (mNotifyManager == null) {
+            Log.w(LOG_TAG, "Cannot update notification - notification manager is not available.");
+            return;
+        }
         if(PreferenceManager.getDefaultSharedPreferences(this).getBoolean(this.getString(R.string.pref_step_counter_enabled), true)){
             Notification notification = buildNotification(this.stepCountFromTotalSteps());
             mNotifyManager.notify(NOTIFICATION_ID, notification);
@@ -442,15 +482,19 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         // Create the NotificationChannel, but only on API 26+ because
         // the NotificationChannel class is new and not in the support library
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            CharSequence name = getString(R.string.app_name);
-            String description = getString(R.string.app_name_long);
+            CharSequence name = getString(R.string.notification_channel_name);
+            String description = getString(R.string.notification_channel_description);
             int importance = NotificationManager.IMPORTANCE_DEFAULT;
             NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
             channel.setDescription(description);
+            channel.setShowBadge(false);
+            channel.setSound(null, null);
             // Register the channel with the system; you can't change the importance
             // or other notification behaviors after this
             NotificationManager notificationManager = getSystemService(NotificationManager.class);
-            notificationManager.createNotificationChannel(channel);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+            }
         }
     }
 

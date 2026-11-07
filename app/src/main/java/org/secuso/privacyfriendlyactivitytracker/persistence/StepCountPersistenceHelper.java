@@ -289,4 +289,19 @@ public class StepCountPersistenceHelper {
         }
         return StepCountPersistenceHelper.db;
     }
+
+    /**
+     * Drops the cached database instance. This is required after the database file was
+     * replaced (e.g. by an imported backup) so that the next access opens the new file.
+     */
+    public static void invalidateReference() {
+        if (StepCountPersistenceHelper.db != null) {
+            try {
+                StepCountPersistenceHelper.db.close();
+            } catch (RuntimeException e) {
+                Log.w(LOG_CLASS, "Could not close the cached step count database.", e);
+            }
+            StepCountPersistenceHelper.db = null;
+        }
+    }
 }

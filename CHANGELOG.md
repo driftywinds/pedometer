@@ -1,5 +1,20 @@
 # Changelog
 
+<a name="unreleased"></a>
+## Unreleased
+
+* Add a step tracking status card to the home screen with a button to force-trigger the
+  permanent notification, so lost tracking can be restored without toggling settings.
+* Re-post the permanent notification after the service (re)starts, make it ongoing and
+  handle blocked notifications / foreground service start failures gracefully.
+* Add JSON export and import of all data (steps, trainings, walking modes and settings)
+  to the settings. Importing replaces all current data and asks for confirmation first.
+* Make backup restore more robust: databases are parsed into temporary files first and
+  only replace the live databases after a successful read (with rollback), and unknown
+  preferences no longer make a restore fail.
+* Fix restoring of the hardware step counter, hardware frequency, widget and wake lock
+  preferences in backups.
+
 <a name="v3.1.0"></a>
 ## [Pedometer (Privacy Friendly) v3.1.0](https://github.com/SecUSo/privacy-friendly-pedometer/releases/tag/v3.1.0) - 23 Jan 2024
 

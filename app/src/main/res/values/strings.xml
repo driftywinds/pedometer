@@ -58,6 +58,22 @@
     <string name="pause_step_detection">Pause step detection</string>
     <string name="continue_step_detection">Continue step detection</string>
 
+    <!-- Tracking notification (home screen) -->
+    <string name="menu_restore_notification">Restore tracking notification</string>
+    <string name="tracking_notification_title">Step tracking</string>
+    <string name="tracking_status_active">Notification is showing. Your steps are counted.</string>
+    <string name="tracking_status_missing">The tracking notification is gone, steps may not be counted.</string>
+    <string name="tracking_status_paused">Step counting is paused.</string>
+    <string name="tracking_status_notifications_off">Notifications are turned off for this app.</string>
+    <string name="tracking_action_restore">Restore</string>
+    <string name="tracking_action_resume">Resume</string>
+    <string name="tracking_action_fix">Fix</string>
+    <string name="tracking_notification_restored">Tracking notification restored.</string>
+    <string name="tracking_notification_failed">Could not restore the tracking notification.</string>
+    <string name="tracking_notifications_off_title">Notifications are turned off</string>
+    <string name="tracking_notifications_off_message">The step counter needs its permanent notification to keep running in the background. Please allow notifications for this app in the system settings and then restore the notification.</string>
+    <string name="tracking_open_settings">Open settings</string>
+
     <!-- HelpActivity -->
     <string name="help_overview_heading">Overview</string>
     <string name="help_intro">This app can count your steps in background, provides you an overview about your walked steps and allows you to define custom walking modes and notifications if the achievement of your daily step goal is in danger.</string>
@@ -130,6 +146,24 @@
     <string name="pref_export_data" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.exportdata</string>
     <string name="pref_title_export_data">Export data</string>
     <string name="pref_summary_export_data">Export step count in csv file.</string>
+
+    <!-- data backup (export/import) -->
+    <string name="pref_group_title_data_backup">Data backup</string>
+    <string name="pref_export_backup" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.export_backup</string>
+    <string name="pref_title_export_backup">Export all data</string>
+    <string name="pref_summary_export_backup">Save steps, trainings, walking modes and settings to a file which can be imported later.</string>
+    <string name="pref_import_backup" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.import_backup</string>
+    <string name="pref_title_import_backup">Import data</string>
+    <string name="pref_summary_import_backup">Restore a previously exported file. All current data will be replaced.</string>
+    <string name="export_backup_success">Data exported.</string>
+    <string name="export_backup_error">Could not export data.</string>
+    <string name="import_backup_choose_file">Choose a Pedometer backup file</string>
+    <string name="import_backup_confirm_title">Replace all data?</string>
+    <string name="import_backup_confirm_message">Importing this file will replace all your steps, trainings, walking modes and settings.\n\nThis cannot be undone. Continue?</string>
+    <string name="import_backup_confirm_action">Replace and import</string>
+    <string name="import_backup_success">Data imported.</string>
+    <string name="import_backup_error">Import failed. The selected file is not a valid Pedometer backup.</string>
+    <!-- /data backup -->
 
     <string name="pref_weight" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.weight</string>
     <string name="pref_title_weight">Weight (kg)</string>
@@ -224,6 +258,8 @@
         <item>50</item>
     </string-array>
     <!-- /notification settings -->
+    <string name="notification_channel_name">Step tracking</string>
+    <string name="notification_channel_description">Permanent notification that keeps the step counter running in the background.</string>
     <string name="pref_header_walking_modes">Walking modes</string>
     <string name="pref_widget_data_set" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.widget_data_set_</string>
     <string name="pref_distance_measurement_start_timestamp" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.distance_measurement_start_timestamp</string>

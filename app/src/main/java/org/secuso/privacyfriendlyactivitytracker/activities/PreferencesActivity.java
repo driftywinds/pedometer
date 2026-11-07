@@ -46,12 +46,17 @@ import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AlertDialog;
 import androidx.core.app.ActivityCompat;
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
+import org.secuso.privacyfriendlyactivitytracker.backup.BackupCreator;
+import org.secuso.privacyfriendlyactivitytracker.backup.BackupRestorer;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.receivers.StepCountPersistenceReceiver;
+import org.secuso.privacyfriendlyactivitytracker.receivers.WidgetReceiver;
 import org.secuso.privacyfriendlyactivitytracker.utils.AndroidVersionHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
@@ -59,11 +64,13 @@ import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 
 /**
@@ -84,6 +91,10 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
     static int REQUEST_ACTIVITY = 3;
 
     private static final int CREATE_FILE = 4;
+    private static final int EXPORT_BACKUP_FILE = 5;
+    private static final int IMPORT_BACKUP_FILE = 6;
+
+    private static final String LOG_TAG = PreferencesActivity.class.getSimpleName();
 
     // private GeneralPreferenceFragment generalPreferenceFragment;
     public static GeneralPreferenceFragment getGeneralPreferenceFragment() {
@@ -240,6 +251,116 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
                 }
             }
         }
+        if (requestCode == EXPORT_BACKUP_FILE && resultCode == Activity.RESULT_OK && resultData != null) {
+            Uri uri = resultData.getData();
+            if (uri != null) {
+                exportBackup(uri);
+            }
+        }
+        if (requestCode == IMPORT_BACKUP_FILE && resultCode == Activity.RESULT_OK && resultData != null) {
+            final Uri uri = resultData.getData();
+            if (uri != null) {
+                // Importing replaces all current data - ask the user before touching anything.
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.import_backup_confirm_title)
+                        .setMessage(R.string.import_backup_confirm_message)
+                        .setPositiveButton(R.string.import_backup_confirm_action, (dialog, which) -> importBackup(uri))
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            }
+        }
+    }
+
+    /**
+     * Writes a complete backup (databases and preferences) to the given document.
+     */
+    private void exportBackup(@NonNull final Uri uri) {
+        final Context appContext = getApplicationContext();
+        new Thread(() -> {
+            boolean success = false;
+            try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                if (out != null) {
+                    success = new BackupCreator().writeBackup(appContext, out);
+                }
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Could not export backup.", e);
+            }
+            final boolean result = success;
+            runOnUiThread(() -> Toast.makeText(PreferencesActivity.this,
+                    result ? R.string.export_backup_success : R.string.export_backup_error,
+                    Toast.LENGTH_LONG).show());
+        }, "pedometer-backup-export").start();
+    }
+
+    /**
+     * Fallback for devices without the storage access framework: write the backup to the
+     * app specific external directory.
+     */
+    void exportBackupToAppDirectory() {
+        final Context appContext = getApplicationContext();
+        final File directory = getExternalFilesDir(null);
+        if (directory == null) {
+            Toast.makeText(this, R.string.export_backup_error, Toast.LENGTH_LONG).show();
+            return;
+        }
+        final File file = new File(directory, "pedometer-backup-" + System.currentTimeMillis() + ".json");
+        new Thread(() -> {
+            boolean success = false;
+            try (OutputStream out = new FileOutputStream(file)) {
+                success = new BackupCreator().writeBackup(appContext, out);
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Could not export backup.", e);
+            }
+            final boolean result = success;
+            runOnUiThread(() -> {
+                if (result) {
+                    Toast.makeText(appContext, getString(R.string.export_backup_success) + " " + file.getAbsolutePath(), Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(appContext, R.string.export_backup_error, Toast.LENGTH_LONG).show();
+                }
+            });
+        }, "pedometer-backup-export").start();
+    }
+
+    /**
+     * Replaces all local data with the contents of the selected backup file.
+     */
+    private void importBackup(@NonNull final Uri uri) {
+        final Context appContext = getApplicationContext();
+        new Thread(() -> {
+            boolean success = false;
+            try (InputStream in = getContentResolver().openInputStream(uri)) {
+                if (in != null) {
+                    // Stop the step detector first so it cannot write into the databases while
+                    // they are replaced by the imported ones.
+                    StepDetectionServiceHelper.stopStepDetection(appContext);
+                    success = new BackupRestorer().restoreBackup(appContext, in);
+                }
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "Could not import backup.", e);
+            }
+
+            final boolean result = success;
+            runOnUiThread(() -> {
+                if (result) {
+                    StepDetectionServiceHelper.startAllIfEnabled(true, appContext);
+                    WidgetReceiver.forceWidgetUpdate(appContext);
+                    // Let already visible reports know that the data changed.
+                    LocalBroadcastManager.getInstance(appContext)
+                            .sendBroadcast(new Intent(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_UPDATED));
+                    LocalBroadcastManager.getInstance(appContext)
+                            .sendBroadcast(new Intent(MainActivity.BROADCAST_ACTION_DATA_REPLACED));
+                    Toast.makeText(appContext, R.string.import_backup_success, Toast.LENGTH_LONG).show();
+                    if (!isFinishing() && !isDestroyed()) {
+                        recreate();
+                    }
+                } else {
+                    Toast.makeText(appContext, R.string.import_backup_error, Toast.LENGTH_LONG).show();
+                    // Continue tracking with the data that is still there.
+                    StepDetectionServiceHelper.startAllIfEnabled(true, appContext);
+                }
+            });
+        }, "pedometer-backup-import").start();
     }
 
     @Override
@@ -291,6 +412,8 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
      */
     public static class GeneralPreferenceFragment extends PreferenceFragment implements SharedPreferences.OnSharedPreferenceChangeListener {
         private Preference exportDataPreference;
+        private Preference exportBackupPreference;
+        private Preference importBackupPreference;
         private Preference lengthUnitPreference;
         private Preference energyUnitPreference;
         private Preference dailyStepGoalPreference;
@@ -323,6 +446,8 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
             genderPreference = findPreference(getString(R.string.pref_gender));
             accelThresholdPreference = findPreference(getString(R.string.pref_accelerometer_threshold));
             exportDataPreference = findPreference(getString(R.string.pref_export_data));
+            exportBackupPreference = findPreference(getString(R.string.pref_export_backup));
+            importBackupPreference = findPreference(getString(R.string.pref_import_backup));
             useStepHardwarePreference = findPreference(getString(R.string.pref_use_step_hardware));
 
             bindPreferenceSummaryToValue(lengthUnitPreference);
@@ -388,6 +513,78 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
                     return true;
                 }
             });
+
+            if (exportBackupPreference != null) {
+                exportBackupPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        startExportBackup();
+                        return true;
+                    }
+                });
+            }
+
+            if (importBackupPreference != null) {
+                importBackupPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
+                    @Override
+                    public boolean onPreferenceClick(Preference preference) {
+                        startImportBackup();
+                        return true;
+                    }
+                });
+            }
+        }
+
+        /**
+         * Lets the user choose where to store a complete data backup.
+         */
+        private void startExportBackup() {
+            if (getActivity() == null) {
+                return;
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                SimpleDateFormat fileDateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
+                String fileName = "pedometer-backup_" + fileDateFormat.format(new Date(System.currentTimeMillis())) + ".json";
+                Intent intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                intent.addCategory(Intent.CATEGORY_OPENABLE);
+                intent.setType("application/json");
+                intent.putExtra(Intent.EXTRA_TITLE, fileName);
+                try {
+                    getActivity().startActivityForResult(intent, EXPORT_BACKUP_FILE);
+                } catch (RuntimeException e) {
+                    Log.e(LOG_TAG, "Could not open the document picker.", e);
+                    Toast.makeText(getActivity(), R.string.export_backup_error, Toast.LENGTH_LONG).show();
+                }
+            } else {
+                // No storage access framework available - write to the app specific directory.
+                ((PreferencesActivity) getActivity()).exportBackupToAppDirectory();
+            }
+        }
+
+        /**
+         * Lets the user choose a backup file to import. The import itself happens after the
+         * user confirmed that the current data will be replaced.
+         */
+        private void startImportBackup() {
+            if (getActivity() == null) {
+                return;
+            }
+            Intent intent;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+                intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+            } else {
+                intent = new Intent(Intent.ACTION_GET_CONTENT);
+            }
+            intent.addCategory(Intent.CATEGORY_OPENABLE);
+            intent.setType("*/*");
+            try {
+                getActivity().startActivityForResult(
+                        Intent.createChooser(intent, getString(R.string.import_backup_choose_file)),
+                        IMPORT_BACKUP_FILE);
+            } catch (RuntimeException e) {
+                Log.e(LOG_TAG, "Could not open the file picker.", e);
+                Toast.makeText(getActivity(), R.string.import_backup_error, Toast.LENGTH_LONG).show();
+            }
         }
 
         private void checkHardwareStepUse(Boolean checked) {

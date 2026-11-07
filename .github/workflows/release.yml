@@ -1,0 +1,183 @@
+name: Release build
+
+# Builds a signed release APK from a version tag.
+#  * A pushed tag (v1.2.3) builds that tag.
+#  * A manual run builds the tag supplied in the "tag" input; the tag is created at the
+#    selected commit when the GitHub release is published.
+#
+# Required repository secrets (Settings -> Secrets and variables -> Actions):
+#   KEYSTORE_BASE64    base64 encoded release keystore (.jks/.keystore)
+#   KEYSTORE_PASSWORD  keystore password
+#   KEY_ALIAS          key alias inside the keystore
+#   KEY_PASSWORD       password of the key alias
+#
+# Create KEYSTORE_BASE64 on Linux/macOS with:
+#   base64 -w0 release.keystore
+# or on Windows (PowerShell) with:
+#   [Convert]::ToBase64String([IO.File]::ReadAllBytes("release.keystore"))
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Version tag to build (e.g. v3.2.0)'
+        required: true
+        type: string
+      create_release:
+        description: 'Create a GitHub release for this tag'
+        required: false
+        default: true
+        type: boolean
+      prerelease:
+        description: 'Mark the GitHub release as a pre-release'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.event_name }}-${{ github.ref_name }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build and sign APK
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          fetch-depth: 0
+
+      - name: Resolve version from tag
+        id: version
+        shell: bash
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          REF_NAME: ${{ github.ref_name }}
+          DISPATCH_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            TAG="$DISPATCH_TAG"
+          else
+            TAG="$REF_NAME"
+          fi
+          TAG="$(printf '%s' "$TAG" | tr -d '[:space:]')"
+
+          if [[ ! "$TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::'$TAG' is not a valid version tag. Expected vMAJOR.MINOR.PATCH (e.g. v3.2.0)."
+            exit 1
+          fi
+
+          MAJOR="${BASH_REMATCH[1]}"
+          MINOR="${BASH_REMATCH[2]}"
+          PATCH="${BASH_REMATCH[3]}"
+          VERSION_NAME="${TAG#v}"
+          # versionCode = major * 10000 + minor * 100 + patch (e.g. v3.2.0 -> 30200)
+          VERSION_CODE=$((10#$MAJOR * 10000 + 10#$MINOR * 100 + 10#$PATCH))
+
+          if [ "$VERSION_CODE" -lt 1 ] || [ "$VERSION_CODE" -gt 2100000000 ]; then
+            echo "::error::Tag $TAG results in an invalid versionCode ($VERSION_CODE)."
+            exit 1
+          fi
+
+          {
+            echo "tag=$TAG"
+            echo "version_name=$VERSION_NAME"
+            echo "version_code=$VERSION_CODE"
+          } >> "$GITHUB_OUTPUT"
+
+          echo "Building $VERSION_NAME (versionCode $VERSION_CODE) from tag $TAG."
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: zulu
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::Secret KEYSTORE_BASE64 is not set. Add the base64 encoded release keystore to the repository secrets."
+            exit 1
+          fi
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/signing/release.keystore"
+          chmod 600 "$RUNNER_TEMP/signing/release.keystore"
+          echo "Decoded keystore ($(stat -c%s "$RUNNER_TEMP/signing/release.keystore") bytes)."
+
+      - name: Write signing properties
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          : "${KEYSTORE_PASSWORD:?Secret KEYSTORE_PASSWORD is not set}"
+          : "${KEY_ALIAS:?Secret KEY_ALIAS is not set}"
+          : "${KEY_PASSWORD:?Secret KEY_PASSWORD is not set}"
+          # app/build.gradle reads these values from pfa.properties (gitignored).
+          cat > pfa.properties <<EOF
+          storeFile=$RUNNER_TEMP/signing/release.keystore
+          storePassword=$KEYSTORE_PASSWORD
+          keyAlias=$KEY_ALIAS
+          keyPassword=$KEY_PASSWORD
+          EOF
+          chmod 600 pfa.properties
+
+      - name: Build signed release APK
+        run: |
+          bash ./gradlew :app:assembleRelease --stacktrace \
+            -PappVersionName="${{ steps.version.outputs.version_name }}" \
+            -PappVersionCode="${{ steps.version.outputs.version_code }}"
+
+      - name: Verify APK signature
+        run: |
+          set -euo pipefail
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          if [ -z "$SDK_ROOT" ]; then
+            echo "::warning::ANDROID_HOME is not set, skipping signature verification."
+            exit 0
+          fi
+          APKSIGNER="$(find "$SDK_ROOT/build-tools" -name apksigner -type f | sort -V | tail -n 1)"
+          if [ -z "$APKSIGNER" ]; then
+            echo "::warning::apksigner not found, skipping signature verification."
+            exit 0
+          fi
+          APK="$(ls app/build/outputs/apk/release/*.apk | head -n 1)"
+          echo "Verifying $APK with $APKSIGNER"
+          "$APKSIGNER" verify --print-certs "$APK"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pedometer-${{ steps.version.outputs.tag }}
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Create GitHub release
+        if: github.event_name == 'push' || inputs.create_release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Pedometer ${{ steps.version.outputs.version_name }}
+          target_commitish: ${{ github.sha }}
+          files: app/build/outputs/apk/release/*.apk
+          generate_release_notes: true
+          prerelease: ${{ inputs.prerelease || contains(steps.version.outputs.tag, '-') }}

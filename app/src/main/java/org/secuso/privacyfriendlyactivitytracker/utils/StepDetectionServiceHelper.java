@@ -32,6 +32,7 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.TrainingPersistence
 import org.secuso.privacyfriendlyactivitytracker.receivers.MotivationAlertReceiver;
 import org.secuso.privacyfriendlyactivitytracker.receivers.StepCountPersistenceReceiver;
 import org.secuso.privacyfriendlyactivitytracker.receivers.WidgetReceiver;
+import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
 import org.secuso.privacyfriendlyactivitytracker.services.AccelerometerStepDetectorService;
 import org.secuso.privacyfriendlyactivitytracker.services.HardwareStepService;
 
@@ -118,15 +119,60 @@ public class StepDetectionServiceHelper {
      * @param context The application context
      */
     public static void startStepDetection(Context context) {
+        startStepDetection(context, null);
+    }
+
+    /**
+     * Starts the step detection service and optionally delivers an action to it.
+     *
+     * @param context The application context
+     * @param action  An optional action for the service (may be null)
+     */
+    public static void startStepDetection(Context context, String action) {
         Log.i(LOG_CLASS, "Started step detection service.");
         Intent stepDetectorServiceIntent = new Intent(context, Factory.getStepDetectorServiceClass(context));
+        if (action != null) {
+            stepDetectorServiceIntent.setAction(action);
+        }
 
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            context.getApplicationContext().startForegroundService(stepDetectorServiceIntent);
-        } else {
-            context.getApplicationContext().startService(stepDetectorServiceIntent);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.getApplicationContext().startForegroundService(stepDetectorServiceIntent);
+            } else {
+                context.getApplicationContext().startService(stepDetectorServiceIntent);
+            }
+        } catch (RuntimeException e) {
+            // Android 12+ forbids starting a foreground service from the background and
+            // Android 14+ validates the foreground service type. Never crash the caller
+            // (e.g. a broadcast receiver); the user can restore tracking from the home screen.
+            Log.e(LOG_CLASS, "Could not start the step detection service.", e);
         }
         WidgetReceiver.forceWidgetUpdate(context);
+    }
+
+    /**
+     * Forces the step detection service to (re-)post its permanent notification.
+     * <p>
+     * The step counter is a foreground service and depends on its notification to be kept
+     * alive by the system. Some devices (or the user) remove the notification or kill the
+     * service, after which steps are not counted anymore. This method restarts the service
+     * if it is not running and asks a running service to refresh the notification, so the
+     * user can recover tracking without toggling any setting.
+     *
+     * @param context The application context
+     * @return true if step detection is enabled and the service was asked to refresh its
+     * notification, false if step detection is disabled
+     */
+    public static boolean forceStepDetectionNotification(Context context) {
+        if (!isStepDetectionEnabled(context)) {
+            Log.i(LOG_CLASS, "Force notification requested, but step detection is disabled.");
+            return false;
+        }
+        startStepDetection(context, AbstractStepDetectorService.ACTION_FORCE_NOTIFICATION);
+        // Make sure the regular persistence alarm is still in place as well.
+        schedulePersistenceService(context);
+        Log.i(LOG_CLASS, "Force notification requested.");
+        return true;
     }
 
     /**

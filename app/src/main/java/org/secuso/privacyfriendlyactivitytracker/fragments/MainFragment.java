@@ -18,30 +18,39 @@
 package org.secuso.privacyfriendlyactivitytracker.fragments;
 
 import android.app.Activity;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.content.SharedPreferences;
 import android.os.Bundle;
 import android.preference.PreferenceManager;
-
+import android.util.Log;
 import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuInflater;
 import android.view.MenuItem;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.Button;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.ActionBar;
+import androidx.appcompat.app.AlertDialog;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentManager;
 import androidx.fragment.app.FragmentPagerAdapter;
 import androidx.viewpager.widget.ViewPager;
 
+import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.tabs.TabLayout;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
 import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
 import org.secuso.privacyfriendlyactivitytracker.activities.PermissionRequestActivity;
+import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
+import org.secuso.privacyfriendlyactivitytracker.utils.NotificationHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 import java.util.ArrayList;
@@ -56,7 +65,19 @@ import static org.secuso.privacyfriendlyactivitytracker.R.id.menu_pause_step_det
  * @author Tobias Neidig
  * @version 20160601
  */
-public class MainFragment extends Fragment implements SharedPreferences.OnSharedPreferenceChangeListener{
+public class MainFragment extends Fragment implements SharedPreferences.OnSharedPreferenceChangeListener {
+
+    private static final String LOG_TAG = MainFragment.class.getName();
+    /**
+     * Delay used before the tracking status is checked again. Starting the foreground
+     * service and posting its notification is asynchronous, so an immediate check could
+     * wrongly report the notification as missing.
+     */
+    private static final long TRACKING_STATUS_CHECK_DELAY = 1000L;
+
+    private TextView trackingStatusView;
+    private Button trackingActionButton;
+    private boolean trackingStatusCheckScheduled = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState){
@@ -83,6 +104,17 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
 
         TabLayout tabLayout = view.findViewById(R.id.tabs);
         tabLayout.setupWithViewPager(viewPager);
+
+        trackingStatusView = view.findViewById(R.id.tracking_status);
+        trackingActionButton = view.findViewById(R.id.tracking_action);
+        trackingStatusCheckScheduled = false;
+        trackingActionButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                onTrackingActionClicked();
+            }
+        });
+        updateTrackingStatus();
 
         setHasOptionsMenu(true);
 
@@ -117,6 +149,8 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
         super.onResume();
 
         ((MainActivity)requireActivity()).askPermissions();
+        updateTrackingStatus();
+        refreshTrackingStatusLater();
     }
 
     @Override
@@ -141,12 +175,19 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
                 editor.putBoolean(getString(R.string.pref_step_counter_enabled), false);
                 editor.apply();
                 StepDetectionServiceHelper.stopAllIfNotRequired(getActivity().getApplicationContext());
+                updateTrackingStatus();
                 return true;
             case R.id.menu_continue_step_detection:
                 editor.putBoolean(getString(R.string.pref_step_counter_enabled), true);
                 editor.apply();
                 ((PermissionRequestActivity)requireActivity()).askPermissions();
                 StepDetectionServiceHelper.startAllIfEnabled(true, getActivity().getApplicationContext());
+                updateTrackingStatus();
+                refreshTrackingStatusLater();
+                return true;
+            case R.id.menu_restore_notification:
+                // Same behaviour as the restore button of the tracking card on the home screen.
+                onTrackingActionClicked();
                 return true;
             default:
                 return false;
@@ -175,7 +216,135 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         if(key.equals(getString(R.string.pref_step_counter_enabled)) || key.equals(getString(R.string.pref_use_step_hardware))){
             this.getActivity().invalidateOptionsMenu();
+            updateTrackingStatus();
         }
+    }
+
+    /**
+     * Checks whether the permanent tracking notification is currently shown and updates the
+     * status card on the home screen accordingly.
+     * <p>
+     * Posting the notification of a freshly started foreground service is asynchronous, so a
+     * missing notification is only reported after a short delay (see
+     * {@link #refreshTrackingStatusLater()}) to avoid a false alarm on start up.
+     */
+    private void updateTrackingStatus() {
+        if (!isAdded() || trackingStatusView == null || trackingActionButton == null) {
+            return;
+        }
+        final Context context = requireContext().getApplicationContext();
+
+        if (!StepDetectionServiceHelper.isStepDetectionEnabled(context)) {
+            trackingStatusView.setText(R.string.tracking_status_paused);
+            trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.darkgrey));
+            trackingActionButton.setText(R.string.tracking_action_resume);
+            return;
+        }
+
+        if (!NotificationHelper.canPostNotifications(context, AbstractStepDetectorService.CHANNEL_ID)) {
+            trackingStatusView.setText(R.string.tracking_status_notifications_off);
+            trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.status_warning));
+            trackingActionButton.setText(R.string.tracking_action_fix);
+            return;
+        }
+
+        if (NotificationHelper.isNotificationVisible(context, AbstractStepDetectorService.NOTIFICATION_ID)) {
+            trackingStatusView.setText(R.string.tracking_status_active);
+            trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.status_ok));
+            trackingActionButton.setText(R.string.tracking_action_restore);
+        } else {
+            // Give the (possibly just started) service a moment to post its notification.
+            refreshTrackingStatusLater();
+        }
+    }
+
+    private void refreshTrackingStatusLater() {
+        final View view = getView();
+        if (view == null || trackingStatusCheckScheduled) {
+            return;
+        }
+        trackingStatusCheckScheduled = true;
+        view.postDelayed(new Runnable() {
+            @Override
+            public void run() {
+                trackingStatusCheckScheduled = false;
+                if (!isAdded() || trackingStatusView == null || trackingActionButton == null) {
+                    return;
+                }
+                final Context context = requireContext().getApplicationContext();
+                if (!StepDetectionServiceHelper.isStepDetectionEnabled(context)) {
+                    trackingStatusView.setText(R.string.tracking_status_paused);
+                    trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.darkgrey));
+                    trackingActionButton.setText(R.string.tracking_action_resume);
+                } else if (!NotificationHelper.canPostNotifications(context, AbstractStepDetectorService.CHANNEL_ID)) {
+                    trackingStatusView.setText(R.string.tracking_status_notifications_off);
+                    trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.status_warning));
+                    trackingActionButton.setText(R.string.tracking_action_fix);
+                } else if (!NotificationHelper.isNotificationVisible(context, AbstractStepDetectorService.NOTIFICATION_ID)) {
+                    trackingStatusView.setText(R.string.tracking_status_missing);
+                    trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.status_warning));
+                    trackingActionButton.setText(R.string.tracking_action_restore);
+                } else {
+                    trackingStatusView.setText(R.string.tracking_status_active);
+                    trackingStatusView.setTextColor(ContextCompat.getColor(context, R.color.status_ok));
+                    trackingActionButton.setText(R.string.tracking_action_restore);
+                }
+            }
+        }, TRACKING_STATUS_CHECK_DELAY);
+    }
+
+    /**
+     * Handles clicks on the tracking card button and on the "restore tracking notification"
+     * menu item. Depending on the current state this resumes the step counter, points the
+     * user to the notification settings or force-triggers the notification.
+     */
+    private void onTrackingActionClicked() {
+        if (!isAdded()) {
+            return;
+        }
+        final Context context = requireContext().getApplicationContext();
+
+        if (!StepDetectionServiceHelper.isStepDetectionEnabled(context)) {
+            // Tracking is paused - resume it and start the service again.
+            SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+            sharedPref.edit().putBoolean(getString(R.string.pref_step_counter_enabled), true).apply();
+            ((PermissionRequestActivity) requireActivity()).askPermissions();
+            StepDetectionServiceHelper.startAllIfEnabled(true, context);
+            updateTrackingStatus();
+            refreshTrackingStatusLater();
+            return;
+        }
+
+        if (!NotificationHelper.canPostNotifications(context, AbstractStepDetectorService.CHANNEL_ID)) {
+            // Forcing the notification cannot work while the system blocks notifications.
+            showNotificationBlockedDialog();
+            return;
+        }
+
+        boolean restored = StepDetectionServiceHelper.forceStepDetectionNotification(context);
+        Snackbar.make(requireView(),
+                restored ? R.string.tracking_notification_restored : R.string.tracking_notification_failed,
+                restored ? Snackbar.LENGTH_SHORT : Snackbar.LENGTH_LONG).show();
+        updateTrackingStatus();
+        refreshTrackingStatusLater();
+    }
+
+    private void showNotificationBlockedDialog() {
+        new AlertDialog.Builder(requireContext())
+                .setTitle(R.string.tracking_notifications_off_title)
+                .setMessage(R.string.tracking_notifications_off_message)
+                .setPositiveButton(R.string.tracking_open_settings, new DialogInterface.OnClickListener() {
+                    @Override
+                    public void onClick(DialogInterface dialog, int which) {
+                        try {
+                            startActivity(NotificationHelper.getNotificationSettingsIntent(requireContext()));
+                        } catch (RuntimeException e) {
+                            Log.e(LOG_TAG, "Could not open the notification settings.", e);
+                        }
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     class ViewPagerAdapter extends FragmentPagerAdapter {
