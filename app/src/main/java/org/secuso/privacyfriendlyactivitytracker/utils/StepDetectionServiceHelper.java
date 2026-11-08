@@ -128,19 +128,21 @@ public class StepDetectionServiceHelper {
      * @param context The application context
      * @param action  An optional action for the service (may be null)
      */
-    public static void startStepDetection(Context context, String action) {
+    public static boolean startStepDetection(Context context, String action) {
         Log.i(LOG_CLASS, "Started step detection service.");
         Intent stepDetectorServiceIntent = new Intent(context, Factory.getStepDetectorServiceClass(context));
         if (action != null) {
             stepDetectorServiceIntent.setAction(action);
         }
 
+        boolean started = false;
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 context.getApplicationContext().startForegroundService(stepDetectorServiceIntent);
             } else {
                 context.getApplicationContext().startService(stepDetectorServiceIntent);
             }
+            started = true;
         } catch (RuntimeException e) {
             // Android 12+ forbids starting a foreground service from the background and
             // Android 14+ validates the foreground service type. Never crash the caller
@@ -148,8 +150,8 @@ public class StepDetectionServiceHelper {
             Log.e(LOG_CLASS, "Could not start the step detection service.", e);
         }
         WidgetReceiver.forceWidgetUpdate(context);
+        return started;
     }
-
     /**
      * Forces the step detection service to (re-)post its permanent notification.
      * <p>
@@ -160,19 +162,19 @@ public class StepDetectionServiceHelper {
      * user can recover tracking without toggling any setting.
      *
      * @param context The application context
-     * @return true if step detection is enabled and the service was asked to refresh its
-     * notification, false if step detection is disabled
+     * @return true if the service start was accepted by the system, false if step detection
+     *         is disabled or the start was refused
      */
     public static boolean forceStepDetectionNotification(Context context) {
         if (!isStepDetectionEnabled(context)) {
             Log.i(LOG_CLASS, "Force notification requested, but step detection is disabled.");
             return false;
         }
-        startStepDetection(context, AbstractStepDetectorService.ACTION_FORCE_NOTIFICATION);
+        boolean started = startStepDetection(context, AbstractStepDetectorService.ACTION_FORCE_NOTIFICATION);
         // Make sure the regular persistence alarm is still in place as well.
         schedulePersistenceService(context);
         Log.i(LOG_CLASS, "Force notification requested.");
-        return true;
+        return started;
     }
 
     /**

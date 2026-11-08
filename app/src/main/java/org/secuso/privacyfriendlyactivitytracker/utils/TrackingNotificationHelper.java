@@ -85,7 +85,12 @@ public final class TrackingNotificationHelper {
             showNotificationsOffDialog(activity);
             return;
         }
-        boolean restored = StepDetectionServiceHelper.forceStepDetectionNotification(context);
+        // Post the notification right away. The foreground service start below is
+        // asynchronous (and may even be refused by the system on Android 12+), which used
+        // to make this action look like it did nothing until the next step or alarm.
+        boolean posted = NotificationHelper.postTrackingNotification(context);
+        boolean started = StepDetectionServiceHelper.forceStepDetectionNotification(context);
+        boolean restored = posted || started;
         Toast.makeText(context,
                 restored ? R.string.tracking_notification_restored : R.string.tracking_notification_failed,
                 restored ? Toast.LENGTH_SHORT : Toast.LENGTH_LONG).show();

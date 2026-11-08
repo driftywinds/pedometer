@@ -48,6 +48,7 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenc
 import org.secuso.privacyfriendlyactivitytracker.persistence.TrainingPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModePersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.AndroidVersionHelper;
+import org.secuso.privacyfriendlyactivitytracker.utils.NotificationHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.UnitHelper;
 
@@ -154,61 +155,10 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
     protected Notification buildNotification(StepCount additionalStepCount) {
         int totalSteps = this.totalStepsAtLastSave + additionalStepCount.getStepCount();
         double totalDistance = this.totalDistanceAtLastSave + additionalStepCount.getDistance();
-        double totalCalories = this.totalCaloriesAtLastSave + additionalStepCount.getCalories(getApplicationContext());
-        // Get user preferences
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean showSteps = sharedPref.getBoolean(this.getString(R.string.pref_notification_permanent_show_steps), true);
-        boolean showDistance = sharedPref.getBoolean(this.getString(R.string.pref_notification_permanent_show_distance), false);
-        boolean showCalories = sharedPref.getBoolean(this.getString(R.string.pref_notification_permanent_show_calories), false);
-        String message = "";
-        if (showSteps) {
-            message = String.format(getString(R.string.notification_text_steps), totalSteps, this.dailyStepGoal);
-        }
-        if (showDistance) {
-            message += (!message.isEmpty()) ? "\n" : "";
-            message += String.format(getString(R.string.notification_text_distance), UnitHelper.kilometerToUsersLengthUnit(UnitHelper.metersToKilometers(totalDistance), this), UnitHelper.usersLengthDescriptionShort(this));
-        }
-        if (showCalories) {
-            message += (!message.isEmpty()) ? "\n" : "";
-            message += String.format(getString(R.string.notification_text_calories), totalCalories);
-        }
-        if(message.isEmpty()){
-            message = getString(R.string.notification_text_default);
-        }
-        Intent intent = new Intent(this, MainActivity.class);
-        PendingIntent pIntent = PendingIntent.getActivity(this, 0, intent, PendingIntent.FLAG_IMMUTABLE);
-        mNotifyManager =
-                (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        NotificationCompat.Builder mBuilder;
-
-        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-
-            mBuilder = new NotificationCompat.Builder(this, CHANNEL_ID);
-            mBuilder.setOnlyAlertOnce(true);
-        } else {
-            mBuilder = new NotificationCompat.Builder(this);
-        }
-        mBuilder.setContentTitle(getString(R.string.app_name))
-                .setContentText(message)
-                .setTicker(message)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(getString(R.string.app_name)))
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
-                .setSmallIcon(R.drawable.ic_stat_directions_walk);
-        mBuilder.setContentIntent(pIntent);
-        if (this.dailyStepGoal > 0) {
-            mBuilder.setProgress(this.dailyStepGoal, totalSteps, false);
-        }
-        mBuilder.setVisibility(NotificationCompat.VISIBILITY_SECRET);
-        mBuilder.setPriority(NotificationCompat.PRIORITY_MIN);
-        mBuilder.setSilent(true);
-        // The service relies on this notification to stay in the foreground. Making it
-        // ongoing prevents (accidental) dismissal that would leave the step counter
-        // running "headless" until the next update.
-        mBuilder.setOngoing(true);
-        mBuilder.setAutoCancel(false);
-        mBuilder.setShowWhen(false);
-        mBuilder.setCategory(NotificationCompat.CATEGORY_SERVICE);
-        return mBuilder.build();
+        double totalCalories = this.totalCaloriesAtLastSave
+                + additionalStepCount.getCalories(getApplicationContext());
+        return NotificationHelper.buildTrackingNotification(this, totalSteps, totalDistance,
+                totalCalories, this.dailyStepGoal);
     }
 
     // has to be implemented by subclasses
@@ -479,23 +429,7 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
     }
 
     void createNotificationChannel() {
-        // Create the NotificationChannel, but only on API 26+ because
-        // the NotificationChannel class is new and not in the support library
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            CharSequence name = getString(R.string.notification_channel_name);
-            String description = getString(R.string.notification_channel_description);
-            int importance = NotificationManager.IMPORTANCE_DEFAULT;
-            NotificationChannel channel = new NotificationChannel(CHANNEL_ID, name, importance);
-            channel.setDescription(description);
-            channel.setShowBadge(false);
-            channel.setSound(null, null);
-            // Register the channel with the system; you can't change the importance
-            // or other notification behaviors after this
-            NotificationManager notificationManager = getSystemService(NotificationManager.class);
-            if (notificationManager != null) {
-                notificationManager.createNotificationChannel(channel);
-            }
-        }
+        NotificationHelper.ensureTrackingChannel(this);
     }
 
     public IBinder getmStepDetectorBinder() {

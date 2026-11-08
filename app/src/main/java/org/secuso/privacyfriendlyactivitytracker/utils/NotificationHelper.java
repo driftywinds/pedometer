@@ -18,6 +18,20 @@
 package org.secuso.privacyfriendlyactivitytracker.utils;
 
 import android.Manifest;
+import android.app.Notification;
+import android.app.PendingIntent;
+import android.preference.PreferenceManager;
+import android.content.SharedPreferences;
+
+import androidx.core.app.NotificationCompat;
+
+import org.secuso.privacyfriendlyactivitytracker.R;
+import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
+import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
+import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
+import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
+
+import java.util.Calendar;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -27,6 +41,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
 import android.service.notification.StatusBarNotification;
+import android.util.Log;
 
 import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
@@ -127,5 +142,136 @@ public final class NotificationHelper {
         }
         return new Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
                 .setData(Uri.fromParts("package", context.getPackageName(), null));
+    }
+    private static final String TAG = "NotificationHelper";
+
+    /**
+     * Creates the permanent tracking notification channel if it does not exist yet.
+     * Posting to a not yet created channel would be silently dropped on Android 8+.
+     */
+    public static void ensureTrackingChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        NotificationManager notificationManager =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notificationManager == null
+                || notificationManager.getNotificationChannel(AbstractStepDetectorService.CHANNEL_ID) != null) {
+            return;
+        }
+        NotificationChannel channel = new NotificationChannel(
+                AbstractStepDetectorService.CHANNEL_ID,
+                context.getString(R.string.notification_channel_name),
+                NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription(context.getString(R.string.notification_channel_description));
+        channel.setShowBadge(false);
+        channel.setSound(null, null);
+        notificationManager.createNotificationChannel(channel);
+    }
+
+    /**
+     * Builds the permanent step counter notification which keeps the foreground
+     * service alive. Shared by the service itself and the "restore notification" action.
+     */
+    public static Notification buildTrackingNotification(Context context, int totalSteps,
+                                                        double totalDistance, double totalCalories,
+                                                        int dailyStepGoal) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+        boolean showSteps = sharedPref.getBoolean(
+                context.getString(R.string.pref_notification_permanent_show_steps), true);
+        boolean showDistance = sharedPref.getBoolean(
+                context.getString(R.string.pref_notification_permanent_show_distance), false);
+        boolean showCalories = sharedPref.getBoolean(
+                context.getString(R.string.pref_notification_permanent_show_calories), false);
+        String message = "";
+        if (showSteps) {
+            message = String.format(context.getString(R.string.notification_text_steps),
+                    totalSteps, dailyStepGoal);
+        }
+        if (showDistance) {
+            message += (!message.isEmpty()) ? "\n" : "";
+            message += String.format(context.getString(R.string.notification_text_distance),
+                    UnitHelper.kilometerToUsersLengthUnit(
+                            UnitHelper.metersToKilometers(totalDistance), context),
+                    UnitHelper.usersLengthDescriptionShort(context));
+        }
+        if (showCalories) {
+            message += (!message.isEmpty()) ? "\n" : "";
+            message += String.format(context.getString(R.string.notification_text_calories), totalCalories);
+        }
+        if (message.isEmpty()) {
+            message = context.getString(R.string.notification_text_default);
+        }
+        Intent intent = new Intent(context, MainActivity.class);
+        PendingIntent pIntent = PendingIntent.getActivity(context, 0, intent,
+                PendingIntent.FLAG_IMMUTABLE);
+        NotificationCompat.Builder mBuilder;
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            mBuilder = new NotificationCompat.Builder(context, AbstractStepDetectorService.CHANNEL_ID);
+            mBuilder.setOnlyAlertOnce(true);
+        } else {
+            mBuilder = new NotificationCompat.Builder(context);
+        }
+        mBuilder.setContentTitle(context.getString(R.string.app_name))
+                .setContentText(message)
+                .setTicker(message)
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(context.getString(R.string.app_name)))
+                .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
+                .setSmallIcon(R.drawable.ic_stat_directions_walk);
+        mBuilder.setContentIntent(pIntent);
+        if (dailyStepGoal > 0) {
+            mBuilder.setProgress(dailyStepGoal, totalSteps, false);
+        }
+        mBuilder.setVisibility(NotificationCompat.VISIBILITY_SECRET);
+        mBuilder.setPriority(NotificationCompat.PRIORITY_MIN);
+        mBuilder.setSilent(true);
+        // The service relies on this notification to stay in the foreground. Making it
+        // ongoing prevents (accidental) dismissal that would leave the step counter
+        // running "headless" until the next update.
+        mBuilder.setOngoing(true);
+        mBuilder.setAutoCancel(false);
+        mBuilder.setShowWhen(false);
+        mBuilder.setCategory(NotificationCompat.CATEGORY_SERVICE);
+        return mBuilder.build();
+    }
+
+    /**
+     * Posts the permanent tracking notification immediately, using the step totals which
+     * are already stored in the database. This makes the "restore notification" action
+     * instant instead of waiting for the service to be (re)started by the system.
+     *
+     * @return true if the notification was handed to the notification manager
+     */
+    public static boolean postTrackingNotification(Context context) {
+        try {
+            ensureTrackingChannel(context);
+            List<StepCount> stepCounts = StepCountPersistenceHelper.getStepCountsForDay(
+                    Calendar.getInstance(), context);
+            int steps = 0;
+            double distance = 0;
+            double calories = 0;
+            for (StepCount stepCount : stepCounts) {
+                steps += stepCount.getStepCount();
+                distance += stepCount.getDistance();
+                calories += stepCount.getCalories(context);
+            }
+            int goal = 10000;
+            try {
+                String goalString = PreferenceManager.getDefaultSharedPreferences(context)
+                        .getString(context.getString(R.string.pref_daily_step_goal), "10000");
+                if (goalString != null) {
+                    goal = Integer.parseInt(goalString);
+                }
+            } catch (NumberFormatException ignored) {
+                // Fall back to the default goal.
+            }
+            NotificationManagerCompat.from(context).notify(
+                    AbstractStepDetectorService.NOTIFICATION_ID,
+                    buildTrackingNotification(context, steps, distance, calories, goal));
+            return true;
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Could not post the tracking notification.", e);
+            return false;
+        }
     }
 }
