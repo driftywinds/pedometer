@@ -874,12 +874,6 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         public void onDetach() {
             SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplicationContext());
             sharedPref.unregisterOnSharedPreferenceChangeListener(this);
-            // The activity used to keep a static reference to this fragment, which leaked the
-            // fragment and its activity.
-            if (getActivity() instanceof PreferencesActivity
-                    && ((PreferencesActivity) getActivity()).generalPreferenceFragment == this) {
-                ((PreferencesActivity) getActivity()).generalPreferenceFragment = null;
-            }
             super.onDetach();
         }
 

@@ -179,7 +179,7 @@
 
     <!-- Will be removed on next update -->
     <string name="notification_text_steps">%1$d av %2$d steg gått idag.</string>
-    <string name="notification_text_distance">%1 $ .2f %2$s gått idag.</string>
+    <string name="notification_text_distance">%1$.2f %2$s gått idag.</string>
     <string name="notification_text_calories">Förbrände %.2f kcal idag.</string>
     <string name="notification_text_default">Stegräknaren är aktiv.</string>
     <!-- /Will be removed on next update -->
