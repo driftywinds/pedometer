@@ -27,7 +27,9 @@ import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.preference.PreferenceManager;
 import android.util.Log;
 import android.view.LayoutInflater;
@@ -58,7 +60,9 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenc
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModePersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
 import org.secuso.privacyfriendlyactivitytracker.services.MovementSpeedService;
+import org.secuso.privacyfriendlyactivitytracker.utils.ReportBuckets;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
+import org.secuso.privacyfriendlyactivitytracker.utils.UnitHelper;
 
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
@@ -86,6 +90,7 @@ import java.util.TimeZone;
 
 public class DailyReportFragment extends Fragment implements ReportAdapter.OnItemClickListener, SharedPreferences.OnSharedPreferenceChangeListener {
     public static String LOG_TAG = DailyReportFragment.class.getName();
+    private static final long REPORT_REFRESH_DELAY_MS = 300L;
     private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver();
     private ReportAdapter mAdapter;
     private RecyclerView mRecyclerView;
@@ -98,6 +103,15 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
     private Map<Integer, WalkingMode> menuWalkingModes;
     private int menuCorrectStepId;
     private AbstractStepDetectorService.StepDetectorBinder myBinder;
+    private boolean bound;
+    private boolean receiverRegistered;
+    private final Handler mRefreshHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mRefreshRunnable = new Runnable() {
+        @Override
+        public void run() {
+            generateReports(true);
+        }
+    };
     private final ServiceConnection mServiceConnection = new ServiceConnection() {
 
         @Override
@@ -147,16 +161,10 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
     @Override
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        /*if (getArguments() != null) {
-           mParam1 = getArguments().getString(ARG_PARAM1);
-        }*/
-        // register for steps-saved-event
         day = Calendar.getInstance();
-        registerReceivers();
         // Bind to stepDetector if today is shown
         if (isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())) {
             bindService();
-            Log.d("service cycle", "bound service in onCreate DailyFragment");
         }
     }
 
@@ -197,18 +205,19 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         }
         if(day == null){
             day = Calendar.getInstance();
-        }
-        if(!day.getTimeZone().equals(TimeZone.getDefault())) {
+        } else if(!day.getTimeZone().equals(TimeZone.getDefault())) {
             day = Calendar.getInstance();
-            generateReports(true);
         }
-        if(isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())){
+        if(isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(context)){
             bindService();
-            Log.d("service cycle", "bound service in onAttach DailyFragment");
-
         }
-        registerReceivers();
         bindMovementSpeedService();
+    }
+
+    @Override
+    public void onStart() {
+        super.onStart();
+        registerReceivers();
     }
 
     @Override
@@ -216,49 +225,45 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         super.onResume();
         if(day == null){
             day = Calendar.getInstance();
-        }
-        if(!day.getTimeZone().equals(TimeZone.getDefault())) {
+        } else if(!day.getTimeZone().equals(TimeZone.getDefault())) {
             day = Calendar.getInstance();
-            generateReports(true);
         }
         if(isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())){
             bindService();
-            Log.d("service cycle", "bound service in onResume DailyFragment");
         }
         registerReceivers();
         bindMovementSpeedService();
     }
 
     @Override
-    public void onDetach() {
-        unbindService();
-        Log.d("service cycle", "UNbound service in onDetach DailyFragment");
-
-        unbindMovementSpeedService();
-        unregisterReceivers();
-        mListener = null;
-        super.onDetach();
-    }
-
-    @Override
     public void onPause(){
+        mRefreshHandler.removeCallbacks(mRefreshRunnable);
         unbindService();
-        Log.d("service cycle", "UNbound service in onPause DailyFragment");
         unbindMovementSpeedService();
         unregisterReceivers();
         super.onPause();
     }
 
     @Override
-    public void onDestroy() {
+    public void onStop() {
+        unregisterReceivers();
+        super.onStop();
+    }
+
+    @Override
+    public void onDetach() {
+        mRefreshHandler.removeCallbacks(mRefreshRunnable);
         unbindService();
-        Log.d("service cycle", "UNbound service in onDestroy DailyFragment");
         unbindMovementSpeedService();
         unregisterReceivers();
-        super.onDestroy();
+        mListener = null;
+        super.onDetach();
     }
 
     private void registerReceivers(){
+        if (receiverRegistered || getContext() == null) {
+            return;
+        }
         // subscribe to onStepsSaved and onStepsDetected broadcasts and onSpeedChanged
         IntentFilter filterRefreshUpdate = new IntentFilter();
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
@@ -266,36 +271,55 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         filterRefreshUpdate.addAction(MovementSpeedService.BROADCAST_ACTION_SPEED_CHANGED);
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_INSERTED);
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_UPDATED);
+        filterRefreshUpdate.addAction(WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED);
         LocalBroadcastManager.getInstance(getContext()).registerReceiver(broadcastReceiver, filterRefreshUpdate);
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getContext());
         sharedPref.registerOnSharedPreferenceChangeListener(this);
+        receiverRegistered = true;
     }
 
     private void unregisterReceivers(){
+        if (!receiverRegistered || getContext() == null) {
+            return;
+        }
         LocalBroadcastManager.getInstance(getContext()).unregisterReceiver(broadcastReceiver);
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getContext());
         sharedPref.unregisterOnSharedPreferenceChangeListener(this);
+        receiverRegistered = false;
     }
 
     private void bindService(){
-        if(myBinder == null) {
+        if(myBinder == null && getActivity() != null) {
             Intent serviceIntent = new Intent(getContext(), Factory.getStepDetectorServiceClass(getContext()));
-            getActivity().getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+            bound = getActivity().getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
         }
         StepDetectionServiceHelper.startAllIfEnabled(true, getContext());
     }
 
     private void unbindService(){
-        if (this.isTodayShown() && mServiceConnection != null && myBinder != null && myBinder.getService() != null) {
-            getActivity().getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
+        if (bound && getActivity() != null) {
+            try {
+                getActivity().getApplicationContext().unbindService(mServiceConnection);
+            } catch (IllegalArgumentException ignored) {
+                // Already unbound.
+            }
+            bound = false;
         }
+        myBinder = null;
     }
 
     private void bindMovementSpeedService(){
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this.getContext());
+        if (getContext() == null || getActivity() == null) {
+            return;
+        }
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getContext());
         boolean isVelocityEnabled = sharedPref.getBoolean(getString(R.string.pref_show_velocity), false);
-        if(movementSpeedBinder == null && isVelocityEnabled){
+        boolean hasLocationPermission =
+                androidx.core.content.ContextCompat.checkSelfPermission(getContext(),
+                        android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+                        || androidx.core.content.ContextCompat.checkSelfPermission(getContext(),
+                        android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED;
+        if(movementSpeedBinder == null && isVelocityEnabled && hasLocationPermission){
             Intent serviceIntent = new Intent(getContext(), MovementSpeedService.class);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 getActivity().startForegroundService(serviceIntent);
@@ -307,8 +331,15 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
     }
 
     private void unbindMovementSpeedService(){
-        if(movementSpeedBinder != null && mMovementSpeedServiceConnection != null && movementSpeedBinder.getService() != null){
-            getActivity().getApplicationContext().unbindService(mMovementSpeedServiceConnection);
+        if (getActivity() == null) {
+            return;
+        }
+        if(movementSpeedBinder != null){
+            try {
+                getActivity().getApplicationContext().unbindService(mMovementSpeedServiceConnection);
+            } catch (IllegalArgumentException ignored) {
+                // Already unbound.
+            }
             movementSpeedBinder = null;
         }
         Intent serviceIntent = new Intent(getContext(), MovementSpeedService.class);
@@ -336,163 +367,144 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
      */
     private void generateReports(boolean updated) {
         Log.i(LOG_TAG, "Generating reports");
-        if (!this.isTodayShown() && updated || isDetached() || getContext() == null || generatingReports) {
+        if ((!this.isTodayShown() && updated) || isDetached() || getContext() == null || generatingReports) {
             // the day shown is not today or is detached
             return;
         }
+        if (getActivity() == null) {
+            return;
+        }
         generatingReports = true;
-        // Get all step counts for this day.
-        final Context context = getActivity().getApplicationContext();
-        final Locale locale = context.getResources().getConfiguration().locale;
-        final SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        List<StepCount> stepCounts = new ArrayList<>();
-        SimpleDateFormat formatHourMinute = new SimpleDateFormat("HH:mm", locale);
-        Calendar m = day;
-        m.set(Calendar.HOUR_OF_DAY, 0);
-        m.set(Calendar.MINUTE, 0);
-        m.set(Calendar.SECOND, 0);
+        try {
+            final Context context = getActivity().getApplicationContext();
+            final Locale locale = UnitHelper.getLocale(context);
+            final SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+            final double caloriesFactor = StepCount.getCaloriesFactor(context);
+            final int dailyGoal = readDailyStepGoal(sharedPref);
 
-        StepCount s = new StepCount();
-        s.setStartTime(m.getTimeInMillis());
-        s.setEndTime(m.getTimeInMillis()); // one hour more
-        s.setStepCount(0);
-        s.setWalkingMode(null);
-        stepCounts.add(s);
-        StepCount previousStepCount = s;
-        for (int h = 0; h < 24; h++) {
-            m.set(Calendar.HOUR_OF_DAY, h);
-            s = new StepCount();
-            s.setStartTime(m.getTimeInMillis() + 1000);
-            if(h != 23) {
-                s.setEndTime(m.getTimeInMillis() + 3600000); // one hour more
-            }else{
-                s.setEndTime(m.getTimeInMillis() + 3599000); // one hour more - 1sec
-            }
-            s.setWalkingMode(previousStepCount.getWalkingMode());
-            previousStepCount = s;
-            // load step counts in interval [s.getStartTime(), s.getEndTime()] from database
-            List<StepCount> stepCountsFromStorage = StepCountPersistenceHelper.getStepCountsForInterval(s.getStartTime(), s.getEndTime(), context);
-            // add non-saved steps if today
-            if(isTodayShown() && s.getStartTime() < Calendar.getInstance().getTimeInMillis() && s.getEndTime() >= Calendar.getInstance().getTimeInMillis() && myBinder != null){
-                // Today is shown. Add the steps which are not in database.
-                StepCount s1 = new StepCount();
-                if (stepCountsFromStorage.size() > 0) {
-                    s1.setStartTime(stepCountsFromStorage.get(stepCountsFromStorage.size() - 1).getEndTime());
+            // One query for the whole day instead of one per hour. The entries are distributed
+            // in memory, which keeps a refresh cheap enough to run on the UI thread.
+            Calendar start = ReportBuckets.startOfDay(day);
+            Calendar end = (Calendar) start.clone();
+            end.add(Calendar.DAY_OF_MONTH, 1);
+            List<StepCount> storedStepCounts = StepCountPersistenceHelper.getStepCountsForInterval(
+                    start.getTimeInMillis(), end.getTimeInMillis() - 1, context);
+            int unsavedSteps = myBinder != null ? myBinder.stepsSinceLastSave() : 0;
+            WalkingMode activeMode = WalkingModePersistenceHelper.getActiveMode(context);
+            List<ReportBuckets.Bucket> buckets = ReportBuckets.hourly(day, storedStepCounts,
+                    unsavedSteps, activeMode, caloriesFactor);
+
+            SimpleDateFormat formatHourMinute = new SimpleDateFormat("HH:mm", locale);
+            Map<String, ActivityChartDataSet> stepData = new LinkedHashMap<>();
+            Map<String, ActivityChartDataSet> distanceData = new LinkedHashMap<>();
+            Map<String, ActivityChartDataSet> caloriesData = new LinkedHashMap<>();
+
+            int stepCount = 0;
+            double distance = 0;
+            int calories = 0;
+            long now = System.currentTimeMillis();
+            for (ReportBuckets.Bucket bucket : buckets) {
+                stepCount += bucket.steps;
+                distance += bucket.distanceMeters;
+                calories += Math.round(bucket.caloriesKcal);
+                String label = formatHourMinute.format(new Date(bucket.endTime));
+                if (bucket.startTime > now) {
+                    // Hours in the future are not drawn.
+                    stepData.put(label, null);
+                    distanceData.put(label, null);
+                    caloriesData.put(label, null);
                 } else {
-                    s1.setStartTime(s.getStartTime());
-                }
-                s1.setEndTime(Calendar.getInstance().getTimeInMillis()); // now
-                s1.setStepCount(myBinder.stepsSinceLastSave());
-                s1.setWalkingMode(WalkingModePersistenceHelper.getActiveMode(context)); // add current walking mode
-                stepCounts.add(s1);
-            }
-            // iterate over stepcounts in interval to sum up steps and detect changes in walkingmode
-            for(StepCount stepCountFromStorage : stepCountsFromStorage){
-                if(previousStepCount.getWalkingMode() == null || !previousStepCount.getWalkingMode().equals(stepCountFromStorage.getWalkingMode())){
-                    // we have to create a new stepcount entry.
-                    long oldEndTime = s.getEndTime();
-                    s.setEndTime(stepCountFromStorage.getStartTime() - 1000);
-                    stepCounts.add(s);
-                    previousStepCount = s;
-                    if(previousStepCount.getWalkingMode() == null){
-                        for (StepCount s1: stepCounts) {
-                            s1.setWalkingMode(stepCountFromStorage.getWalkingMode());
-                        }
-                        previousStepCount.setWalkingMode(stepCountFromStorage.getWalkingMode());
-                    }
-                    // create new stepcount.
-                    s = new StepCount();
-                    s.setStartTime(stepCountFromStorage.getStartTime());
-                    s.setEndTime(oldEndTime);
-                    s.setStepCount(stepCountFromStorage.getStepCount());
-                    s.setWalkingMode(stepCountFromStorage.getWalkingMode());
-                }else{
-                    s.setStepCount(s.getStepCount() + stepCountFromStorage.getStepCount());
+                    StepCount representative = bucketToStepCount(bucket);
+                    stepData.put(label, new ActivityChartDataSet(stepCount, representative));
+                    distanceData.put(label, new ActivityChartDataSet(distance, representative));
+                    caloriesData.put(label, new ActivityChartDataSet(calories, representative));
                 }
             }
-            stepCounts.add(s);
-        }
-        // fill chart data arrays
-        int stepCount = 0;
-        double distance = 0;
-        int calories = 0;
-        Map<String, ActivityChartDataSet> stepData = new LinkedHashMap<>();
-        Map<String, ActivityChartDataSet> distanceData = new LinkedHashMap<>();
-        Map<String, ActivityChartDataSet> caloriesData = new LinkedHashMap<>();
-        for (StepCount s1: stepCounts) {
-            stepCount += s1.getStepCount();
-            distance += s1.getDistance();
-            calories += s1.getCalories(context);
-            if (!stepData.containsKey(formatHourMinute.format(s1.getEndTime())) ||
-                    (stepData.get(formatHourMinute.format(s1.getEndTime())) != null && stepData.get(formatHourMinute.format(s1.getEndTime())).getStepCount().getStepCount() < stepCount)) {
-                if (s1.getEndTime() > Calendar.getInstance().getTime().getTime()) {
-                    stepData.put(formatHourMinute.format(s1.getEndTime()), null);
-                    distanceData.put(formatHourMinute.format(s1.getEndTime()), null);
-                    caloriesData.put(formatHourMinute.format(s1.getEndTime()), null);
-                } else {
-                    stepData.put(formatHourMinute.format(s1.getEndTime()), new ActivityChartDataSet(stepCount, s1));
-                    distanceData.put(formatHourMinute.format(s1.getEndTime()), new ActivityChartDataSet(distance, s1));
-                    caloriesData.put(formatHourMinute.format(s1.getEndTime()), new ActivityChartDataSet(calories, s1));
-                }
-            }else{
-                Log.i(LOG_TAG, "Skipping put operation");
-            }
-        }
 
-        SimpleDateFormat simpleDateFormat = new SimpleDateFormat("dd. MMMM", locale);
+            SimpleDateFormat simpleDateFormat = new SimpleDateFormat("dd. MMMM", locale);
+            String title = simpleDateFormat.format(day.getTime());
 
-        // create view models
-        if (activitySummary == null) {
-            activitySummary = new ActivitySummary(stepCount, distance, calories, simpleDateFormat.format(day.getTime()));
-            reports.add(activitySummary);
-        } else {
+            // create/update view models
+            if (activitySummary == null) {
+                activitySummary = new ActivitySummary(stepCount, distance, calories, title);
+                reports.add(activitySummary);
+            }
             activitySummary.setSteps(stepCount);
             activitySummary.setDistance(distance);
             activitySummary.setCalories(calories);
-            activitySummary.setTitle(simpleDateFormat.format(day.getTime()));
+            activitySummary.setTitle(title);
             activitySummary.setHasSuccessor(!this.isTodayShown());
-            activitySummary.setHasPredecessor(StepCountPersistenceHelper.getDateOfFirstEntry(getContext()).before(day.getTime()));
+            activitySummary.setHasPredecessor(
+                    StepCountPersistenceHelper.getDateOfFirstEntry(context).before(day.getTime()));
             boolean isVelocityEnabled = sharedPref.getBoolean(getString(R.string.pref_show_velocity), false);
-            if(movementSpeedBinder != null  && isVelocityEnabled){
+            if (movementSpeedBinder != null && isVelocityEnabled && this.isTodayShown()) {
                 activitySummary.setCurrentSpeed(movementSpeedBinder.getSpeed());
-            }else{
+            } else {
                 activitySummary.setCurrentSpeed(null);
             }
-        }
+            activitySummary.setGoal(dailyGoal);
 
-        if (activityChart == null) {
-            activityChart = new ActivityDayChart(stepData, distanceData, caloriesData, simpleDateFormat.format(day.getTime()));
-            activityChart.setDisplayedDataType(ActivityDayChart.DataType.STEPS);
-            reports.add(activityChart);
-        } else {
+            if (activityChart == null) {
+                activityChart = new ActivityDayChart(stepData, distanceData, caloriesData, title);
+                activityChart.setDisplayedDataType(ActivityDayChart.DataType.STEPS);
+                reports.add(activityChart);
+            }
             activityChart.setSteps(stepData);
             activityChart.setDistance(distanceData);
             activityChart.setCalories(caloriesData);
-            activityChart.setTitle(simpleDateFormat.format(day.getTime()));
-        }
-        if (reports.isEmpty() || !(reports.get(reports.size() - 1) instanceof TrackingStatus)) {
-            reports.add(new TrackingStatus());
-        }
-        String d = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
-        activityChart.setGoal(Integer.valueOf(d));
-        activitySummary.setGoal(Integer.valueOf(d));
+            activityChart.setTitle(title);
+            activityChart.setGoal(dailyGoal);
 
-        // notify ui
-        if (mAdapter != null && mRecyclerView != null && getActivity() != null) {
-            getActivity().runOnUiThread(new Runnable() {
-                @Override
-                public void run() {
-                    if(!mRecyclerView.isComputingLayout()) {
-                        mAdapter.notifyDataSetChanged();
-                    }else{
-                        Log.w(LOG_TAG, "Cannot inform adapter for changes - RecyclerView is computing layout.");
+            if (reports.isEmpty() || !(reports.get(reports.size() - 1) instanceof TrackingStatus)) {
+                reports.add(new TrackingStatus());
+            }
+
+            // notify ui
+            if (mAdapter != null && mRecyclerView != null && getActivity() != null) {
+                getActivity().runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if(!mRecyclerView.isComputingLayout()) {
+                            mAdapter.notifyDataSetChanged();
+                        }else{
+                            Log.w(LOG_TAG, "Cannot inform adapter for changes - RecyclerView is computing layout.");
+                        }
                     }
-                }
-            });
-        } else {
-            Log.w(LOG_TAG, "Cannot inform adapter for changes.");
+                });
+            } else {
+                Log.w(LOG_TAG, "Cannot inform adapter for changes.");
+            }
+        } finally {
+            generatingReports = false;
         }
-        generatingReports = false;
+    }
+
+    /**
+     * Coalesces many step broadcasts into one refresh. Without this the report was rebuilt
+     * for every detected step (several times per second while walking).
+     */
+    private void scheduleReportsRefresh() {
+        mRefreshHandler.removeCallbacks(mRefreshRunnable);
+        mRefreshHandler.postDelayed(mRefreshRunnable, REPORT_REFRESH_DELAY_MS);
+    }
+
+    private StepCount bucketToStepCount(ReportBuckets.Bucket bucket) {
+        StepCount stepCount = new StepCount();
+        stepCount.setStartTime(bucket.startTime);
+        stepCount.setEndTime(bucket.endTime);
+        stepCount.setStepCount(bucket.steps);
+        stepCount.setWalkingMode(bucket.walkingMode);
+        return stepCount;
+    }
+
+    private int readDailyStepGoal(SharedPreferences sharedPref) {
+        String value = sharedPref.getString(getString(R.string.pref_daily_step_goal), "10000");
+        try {
+            int goal = Integer.parseInt(value);
+            return goal > 0 ? goal : 10000;
+        } catch (NumberFormatException e) {
+            return 10000;
+        }
     }
 
     @Override
@@ -537,7 +549,6 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         this.generateReports(false);
         if (isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())) {
             bindService();
-            Log.d("service cycle", "bound service in onPrevClicked DailyFragment");
         }
     }
 
@@ -547,7 +558,6 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         this.generateReports(false);
         if (isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())) {
             bindService();
-            Log.d("service cycle", "bound service in onNextClicked DailyFragment");
 
         }
     }
@@ -568,7 +578,6 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
                 DailyReportFragment.this.generateReports(false);
                 if (isTodayShown() && StepDetectionServiceHelper.isStepDetectionEnabled(getContext())) {
                     bindService();
-                    Log.d("service cycle", "bound service in onDateSet DailyFragment");
                 }
             }
         }, year, month, day);
@@ -664,13 +673,16 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
         if(key.equals(getString(R.string.pref_step_counter_enabled)) || key.equals(getString(R.string.pref_use_step_hardware))){
             if(!StepDetectionServiceHelper.isStepDetectionEnabled(getContext())){
                 unbindService();
-                Log.d("servicecycle", "UNbound service in PREFERENCEchanged DailyFragment");
-
             }else if(this.isTodayShown()){
                 bindService();
-                Log.d("servicecycle", "bound service in PREFERENCEchanged DailyFragment");
-
             }
+        }
+        if (key.equals(getString(R.string.pref_daily_step_goal))
+                || key.equals(getString(R.string.pref_show_velocity))
+                || key.equals(getString(R.string.pref_weight))
+                || key.equals(getString(R.string.pref_unit_of_length))
+                || key.equals(getString(R.string.pref_unit_of_energy))) {
+            scheduleReportsRefresh();
         }
     }
 
@@ -697,8 +709,8 @@ public class DailyReportFragment extends Fragment implements ReportAdapter.OnIte
                 case StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED:
                 case WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED:
                 case MovementSpeedService.BROADCAST_ACTION_SPEED_CHANGED:
-                    // Steps were saved, reload step count from database
-                    generateReports(true);
+                    // Coalesce bursts of step broadcasts into at most one refresh per 300 ms.
+                    scheduleReportsRefresh();
                     break;
                 case StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_INSERTED:
                 case StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_UPDATED:

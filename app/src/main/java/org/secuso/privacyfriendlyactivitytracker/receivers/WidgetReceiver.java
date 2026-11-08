@@ -43,8 +43,6 @@ import static android.view.View.GONE;
 import static android.view.View.VISIBLE;
 
 public class WidgetReceiver extends AppWidgetProvider {
-    public static final String PAUSE_STEP_DETECTION_ACTION = "org.secuso.privacyfriendlyactivitytracker.PAUSE_STEP_DETECTION_ACTION";
-    public static final String CONTINUE_STEP_DETECTION_ACTION = "org.secuso.privacyfriendlyactivitytracker.CONTINUE_STEP_DETECTION_ACTION";
     public static final int DATA_SET_STEPS = 0;
     public static final int DATA_SET_DISTANCE = 1;
     public static final int DATA_SET_CALORIES = 2;
@@ -70,14 +68,15 @@ public class WidgetReceiver extends AppWidgetProvider {
             Intent intent = new Intent(context, SplashActivity.class);
             PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
             rv.setOnClickPendingIntent(R.id.widget, pendingIntent);
-            // add intents to buttons
-            intent = new Intent(context, WidgetReceiver.class);
-            intent.setAction(PAUSE_STEP_DETECTION_ACTION);
+            // add intents to buttons. The actions are handled by the non-exported
+            // WidgetActionReceiver, so that no other app can toggle step detection.
+            intent = new Intent(context, WidgetActionReceiver.class);
+            intent.setAction(WidgetActionReceiver.PAUSE_STEP_DETECTION_ACTION);
             pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
             rv.setOnClickPendingIntent(R.id.pause_step_detection, pendingIntent);
 
-            intent = new Intent(context, WidgetReceiver.class);
-            intent.setAction(CONTINUE_STEP_DETECTION_ACTION);
+            intent = new Intent(context, WidgetActionReceiver.class);
+            intent.setAction(WidgetActionReceiver.CONTINUE_STEP_DETECTION_ACTION);
             pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
             rv.setOnClickPendingIntent(R.id.continue_step_detection, pendingIntent);
 
@@ -127,21 +126,21 @@ public class WidgetReceiver extends AppWidgetProvider {
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        SharedPreferences.Editor editor = sharedPref.edit();
-        switch(intent.getAction()){
-            case PAUSE_STEP_DETECTION_ACTION:
-                editor.putBoolean(context.getString(R.string.pref_step_counter_enabled), false);
-                editor.apply();
-                StepDetectionServiceHelper.stopAllIfNotRequired(context.getApplicationContext());
-                break;
-            case CONTINUE_STEP_DETECTION_ACTION:
-                editor.putBoolean(context.getString(R.string.pref_step_counter_enabled), true);
-                editor.apply();
-                StepDetectionServiceHelper.startAllIfEnabled(context.getApplicationContext());
-                break;
-        }
+        // The APPWIDGET_UPDATE broadcast is handled by AppWidgetProvider. The pause and
+        // continue actions are handled by the non-exported WidgetActionReceiver, so this
+        // exported receiver must not change any state.
         super.onReceive(context, intent);
+    }
+
+    @Override
+    public void onDeleted(Context context, int[] appWidgetIds) {
+        SharedPreferences.Editor editor = PreferenceManager
+                .getDefaultSharedPreferences(context).edit();
+        for (int appWidgetId : appWidgetIds) {
+            editor.remove(context.getString(R.string.pref_widget_data_set) + appWidgetId);
+        }
+        editor.apply();
+        super.onDeleted(context, appWidgetIds);
     }
 
     /**

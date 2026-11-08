@@ -2,9 +2,11 @@ package org.secuso.privacyfriendlyactivitytracker.backup;
 
 
 import android.content.Context;
+import android.content.Intent;
 import android.content.SharedPreferences;
 import android.preference.PreferenceManager;
 import android.util.JsonReader;
+import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.sqlite.db.SupportSQLiteDatabase;
@@ -13,6 +15,7 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountDbHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.TrainingDbHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModeDbHelper;
+import org.secuso.privacyfriendlyactivitytracker.receivers.DataRestoredReceiver;
 import org.secuso.privacyfriendlybackup.api.backup.DatabaseUtil;
 import org.secuso.privacyfriendlybackup.api.backup.FileUtil;
 import org.secuso.privacyfriendlybackup.api.pfa.IBackupRestorer;
@@ -21,6 +24,7 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,6 +44,11 @@ public class BackupRestorer implements IBackupRestorer {
      * Suffix of the renamed live databases while they are replaced.
      */
     private static final String BACKUP_DATABASE_SUFFIX = ".importbak";
+    /**
+     * Suffix of the failed import while it is rolled back.
+     */
+    private static final String FAILED_IMPORT_SUFFIX = ".failedimport";
+    private static final String LOG_TAG = BackupRestorer.class.getSimpleName();
 
     /**
      * Databases that were parsed successfully and wait to replace the live databases.
@@ -102,6 +111,10 @@ public class BackupRestorer implements IBackupRestorer {
      * rolled back without losing the existing data.
      */
     private void replaceDatabases(@NonNull Context context) throws IOException {
+        // Close the connections of this process first. On Linux an open file handle would keep
+        // pointing to the renamed (old) file, so writes after the import would go to the
+        // replaced database instead of the imported one.
+        closeDatabaseReferences();
         for (File[] pair : pendingDatabases) {
             File tempDatabase = pair[0];
             File liveDatabase = pair[1];
@@ -119,16 +132,40 @@ public class BackupRestorer implements IBackupRestorer {
         pendingDatabases.clear();
     }
 
+    private void closeDatabaseReferences() {
+        StepCountDbHelper.invalidateReference();
+        StepCountPersistenceHelper.invalidateReference();
+        TrainingDbHelper.invalidateReference();
+        WalkingModeDbHelper.invalidateReference();
+    }
+
     private void rollbackDatabases() {
         for (int i = replacedDatabases.size() - 1; i >= 0; i--) {
             File[] pair = replacedDatabases.get(i);
             File backup = pair[0];
             File liveDatabase = pair[1];
-            liveDatabase.delete();
-            deleteSidecarFiles(liveDatabase);
-            if (backup.exists()) {
+            if (!backup.exists()) {
+                // Nothing to roll back to.
+                continue;
+            }
+            // Move the failed import out of the way instead of deleting it first, so that the
+            // data is never lost when the second rename fails as well.
+            File failedImport = new File(liveDatabase.getPath() + FAILED_IMPORT_SUFFIX);
+            //noinspection ResultOfMethodCallIgnored
+            failedImport.delete();
+            if (liveDatabase.exists() && !liveDatabase.renameTo(failedImport)) {
+                Log.e(LOG_TAG, "Could not move the failed import aside: " + liveDatabase);
+                continue;
+            }
+            if (backup.renameTo(liveDatabase)) {
                 //noinspection ResultOfMethodCallIgnored
-                backup.renameTo(liveDatabase);
+                failedImport.delete();
+            } else {
+                Log.e(LOG_TAG, "Could not restore the database after a failed import: " + liveDatabase);
+                // Keep the failed import and the backup on disk so that the data can be
+                // recovered manually instead of silently losing it.
+                //noinspection ResultOfMethodCallIgnored
+                failedImport.renameTo(liveDatabase);
             }
         }
         replacedDatabases.clear();
@@ -276,7 +313,7 @@ public class BackupRestorer implements IBackupRestorer {
         pendingPreferences.clear();
         pendingTutorialPreferences.clear();
         try {
-            InputStreamReader isReader = new InputStreamReader(restoreData);
+            InputStreamReader isReader = new InputStreamReader(restoreData, StandardCharsets.UTF_8);
             JsonReader reader = new JsonReader(isReader);
 
             // START
@@ -319,13 +356,31 @@ public class BackupRestorer implements IBackupRestorer {
             WalkingModeDbHelper.invalidateReference();
 
             finishImport();
+            notifyDataRestored(context);
 
             return true;
         } catch (Exception e) {
+            Log.e(LOG_TAG, "Could not restore the backup.", e);
             rollbackDatabases();
+            closeDatabaseReferences();
             return false;
         } finally {
             cleanUpTempDatabases();
+        }
+    }
+
+    /**
+     * Tells the main process that the data was replaced. The restore runs in the
+     * {@code :backup} process, so the database connections of the main process have to be
+     * closed there and tracking has to be restarted.
+     */
+    private void notifyDataRestored(@NonNull Context context) {
+        try {
+            Intent intent = new Intent(context, DataRestoredReceiver.class);
+            intent.setAction(DataRestoredReceiver.ACTION_DATA_RESTORED);
+            context.sendBroadcast(intent);
+        } catch (RuntimeException e) {
+            Log.w(LOG_TAG, "Could not notify the main process about the restored data.", e);
         }
     }
 

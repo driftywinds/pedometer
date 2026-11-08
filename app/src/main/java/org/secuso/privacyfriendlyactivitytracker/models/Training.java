@@ -50,7 +50,7 @@ public class Training {
         trainingSession.setId(c.getLong(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry._ID)));
         trainingSession.setName(c.getString(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_NAME)));
         trainingSession.setDescription(c.getString(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_DESCRIPTION)));
-        trainingSession.setSteps(c.getInt(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_STEPS)));
+        trainingSession.setSteps(c.getDouble(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_STEPS)));
         trainingSession.setDistance(c.getDouble(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_DISTANCE)));
         trainingSession.setCalories(c.getDouble(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_CALORIES)));
         trainingSession.setFeeling(c.getFloat(c.getColumnIndexOrThrow(TrainingDbHelper.TrainingSessionEntry.KEY_FEELING)));
@@ -167,11 +167,11 @@ public class Training {
         values.put(TrainingDbHelper.TrainingSessionEntry.KEY_NAME, this.getName());
         values.put(TrainingDbHelper.TrainingSessionEntry.KEY_DESCRIPTION, this.getDescription());
         values.put(TrainingDbHelper.TrainingSessionEntry.KEY_STEPS, this.getSteps());
-        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_DISTANCE, String.valueOf(this.getDistance()));
-        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_CALORIES, String.valueOf(this.getCalories()));
-        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_FEELING, String.valueOf(this.getFeeling()));
-        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_START, String.valueOf(this.getStart()));
-        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_END, String.valueOf(this.getEnd()));
+        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_DISTANCE, this.getDistance());
+        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_CALORIES, this.getCalories());
+        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_FEELING, this.getFeeling());
+        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_START, this.getStart());
+        values.put(TrainingDbHelper.TrainingSessionEntry.KEY_END, this.getEnd());
         return values;
     }
 }

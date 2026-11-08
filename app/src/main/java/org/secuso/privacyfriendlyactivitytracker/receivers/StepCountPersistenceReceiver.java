@@ -17,89 +17,43 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.receivers;
 
-import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
-import android.os.IBinder;
 import android.util.Log;
 
-import androidx.legacy.content.WakefulBroadcastReceiver;
-
-import org.secuso.privacyfriendlyactivitytracker.Factory;
-import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
-import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModePersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 /**
- * Stores the current step count in database.
+ * Asks the step detector service to store the current step count.
+ * <p>
+ * The receiver used to bind to the service and write the database from the binder callback
+ * after {@link #onReceive} had returned. That made the write depend on the process staying
+ * alive and duplicated the service lifecycle. The service now owns the write via
+ * {@code ACTION_SAVE_STEPS}, which is also the only place which resets the counter.
  *
  * @author Tobias Neidig
  * @version 20160720
  */
 
-public class StepCountPersistenceReceiver extends WakefulBroadcastReceiver {
+public class StepCountPersistenceReceiver extends BroadcastReceiver {
     private static final String LOG_CLASS = StepCountPersistenceReceiver.class.getName();
-    private WalkingMode oldWalkingMode;
-    /**
-     * The application context
-     */
-    private Context context;
-    private final ServiceConnection mServiceConnection = new ServiceConnection() {
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-        }
-
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            StepCountPersistenceHelper.storeStepCounts(service, context, oldWalkingMode);
-            context.getApplicationContext().unbindService(mServiceConnection);
-            Log.d("service cycle", "UNbound service in onServiceConnected PERSISTENCEReceiver");
-
-            StepDetectionServiceHelper.stopAllIfNotRequired(false, context);
-            WidgetReceiver.forceWidgetUpdate(context);
-            if(mSaveListener != null) {
-                mSaveListener.onSaveDone();
-            }
-        }
-    };
 
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.i(LOG_CLASS, "Storing the steps");
-        this.context = context.getApplicationContext();
-        if (intent.hasExtra(WalkingModePersistenceHelper.BROADCAST_EXTRA_OLD_WALKING_MODE)) {
-            oldWalkingMode = WalkingModePersistenceHelper.getItem(intent.getLongExtra(WalkingModePersistenceHelper.BROADCAST_EXTRA_OLD_WALKING_MODE, -1), context);
+        Context appContext = context.getApplicationContext();
+        long oldWalkingModeId = -1;
+        if (intent != null) {
+            oldWalkingModeId = intent.getLongExtra(
+                    WalkingModePersistenceHelper.BROADCAST_EXTRA_OLD_WALKING_MODE, -1);
         }
-        if(oldWalkingMode == null){
-            oldWalkingMode = WalkingModePersistenceHelper.getActiveMode(context);
-        }
-        // Make sure the step detector is running and its foreground notification is shown.
-        // Binding alone would only create the service temporarily, and it would be destroyed
-        // again after the steps were stored - leaving the app without its tracking notification.
-        StepDetectionServiceHelper.startAllIfEnabled(this.context);
-        // bind to service
-        Intent serviceIntent = new Intent(context, Factory.getStepDetectorServiceClass(context));
-        context.getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
-        Log.d("service cycle", "bound service in onReceive PERSISTENCEReceiver");
-
+        // Ask the service to persist the steps. The service keeps the counted steps in memory,
+        // so this is the only place which knows them.
+        StepDetectionServiceHelper.saveStepsNow(appContext, oldWalkingModeId);
+        // Re-arm the alarms - they are one-shot so that they also work in Doze mode.
+        StepDetectionServiceHelper.schedulePersistenceService(appContext);
+        WidgetReceiver.forceWidgetUpdate(appContext);
     }
-
-    public interface ISaveListener {
-        void onSaveDone();
-    }
-
-    private static ISaveListener mSaveListener = null;
-
-    public static void registerSaveListener(ISaveListener listener) {
-        mSaveListener = listener;
-    }
-
-    public static void unregisterSaveListener() {
-        mSaveListener = null;
-    }
-
-
 }

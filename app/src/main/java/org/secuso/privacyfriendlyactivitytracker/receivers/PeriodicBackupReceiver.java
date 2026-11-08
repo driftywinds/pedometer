@@ -20,26 +20,61 @@ package org.secuso.privacyfriendlyactivitytracker.receivers;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.os.PowerManager;
+import android.util.Log;
 
 import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 
 /**
  * Receives the periodic backup alarm as well as the boot broadcast, so the next alarm is
  * re-armed after a reboot.
+ * <p>
+ * The receiver keeps the process alive with {@link #goAsync()} and a partial wake lock while
+ * the backup is written, so that a sleeping device cannot kill the process in the middle of
+ * the export.
  */
 public class PeriodicBackupReceiver extends BroadcastReceiver {
+    private static final String TAG = PeriodicBackupReceiver.class.getSimpleName();
+    private static final long WAKE_LOCK_TIMEOUT_MS = 10 * 60 * 1000L;
 
     @Override
     public void onReceive(Context context, Intent intent) {
         if (intent == null) {
             return;
         }
-        String action = intent.getAction();
-        if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
-            PeriodicBackupManager.schedule(context);
-            PeriodicBackupManager.runIfDue(context);
-            return;
+        final Context appContext = context.getApplicationContext();
+        final String action = intent.getAction();
+        final PendingResult pendingResult = goAsync();
+        final PowerManager.WakeLock wakeLock = acquireWakeLock(appContext);
+        new Thread(() -> {
+            try {
+                if (Intent.ACTION_BOOT_COMPLETED.equals(action)) {
+                    PeriodicBackupManager.schedule(appContext);
+                }
+                PeriodicBackupManager.runIfDueBlocking(appContext);
+            } catch (RuntimeException e) {
+                Log.e(TAG, "Periodic backup failed.", e);
+            } finally {
+                if (wakeLock != null) {
+                    try {
+                        wakeLock.release();
+                    } catch (RuntimeException ignored) {
+                        // Already released.
+                    }
+                }
+                pendingResult.finish();
+            }
+        }, "pedometer-periodic-backup-receiver").start();
+    }
+
+    private PowerManager.WakeLock acquireWakeLock(Context context) {
+        PowerManager powerManager = (PowerManager) context.getSystemService(Context.POWER_SERVICE);
+        if (powerManager == null) {
+            return null;
         }
-        PeriodicBackupManager.runIfDue(context);
+        PowerManager.WakeLock wakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK, "pfPedometer:PeriodicBackup");
+        wakeLock.acquire(WAKE_LOCK_TIMEOUT_MS);
+        return wakeLock;
     }
 }

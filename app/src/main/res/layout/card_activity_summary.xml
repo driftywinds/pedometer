@@ -52,6 +52,7 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:contentDescription="@string/a11y_prev"
+                android:autoMirrored="true"
                 android:src="@drawable/ic_chevron_left_black_24dp" />
 
             <LinearLayout
@@ -83,6 +84,7 @@
                 android:layout_width="48dp"
                 android:layout_height="48dp"
                 android:contentDescription="@string/a11y_next"
+                android:autoMirrored="true"
                 android:src="@drawable/ic_chevron_right_black_24dp" />
 
             <ImageButton

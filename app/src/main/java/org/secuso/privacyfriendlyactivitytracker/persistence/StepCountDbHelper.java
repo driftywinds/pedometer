@@ -25,9 +25,12 @@ import android.database.sqlite.SQLiteOpenHelper;
 import android.provider.BaseColumns;
 
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
+import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * Database helper class for storing steps
@@ -37,9 +40,9 @@ import java.util.List;
  * @version 20160630
  */
 
-public class StepCountDbHelper  extends SQLiteOpenHelper {
+public class StepCountDbHelper extends SQLiteOpenHelper {
     // If you change the database schema, you must increment the database version.
-    public static final int DATABASE_VERSION = 2;
+    public static final int DATABASE_VERSION = 3;
 
     public static final String DATABASE_NAME = "StepCount.db";
 
@@ -52,6 +55,12 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
 
     private static final String INTEGER_TYPE = " INTEGER";
     private static final String COMMA_SEP = ",";
+
+    private static final String INDEX_TIMESTAMP_NAME = "index_stepcount_timestamp";
+    private static final String SQL_CREATE_INDEX =
+            "CREATE INDEX IF NOT EXISTS " + INDEX_TIMESTAMP_NAME +
+                    " ON " + TABLE_NAME + " (" + KEY_TIMESTAMP + ")";
+
     private static final String SQL_CREATE_ENTRIES =
             "CREATE TABLE " + TABLE_NAME + " (" +
                     KEY_ID + " INTEGER PRIMARY KEY," +
@@ -62,34 +71,58 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
 
     private static SQLiteDatabase db;
 
-    private Context context;
+    private final Context context;
 
     /**
-     * Returns a static database instance
+     * Returns the shared database instance of this process.
+     * <p>
+     * All helper instances share the same connection so that there is exactly one
+     * connection per database file. {@link #invalidateReference()} closes it, which is
+     * required before the file is replaced by a restored backup.
+     *
      * @param instance Instance of stepCountDbHelper to fetch new db-instance if necessary
      * @return static database instance
      */
-    private static SQLiteDatabase getDatabase(StepCountDbHelper instance){
-        if(db == null){
+    private static synchronized SQLiteDatabase getDatabase(StepCountDbHelper instance) {
+        if (db == null || !db.isOpen()) {
             db = instance.getWritableDatabase();
         }
         return db;
     }
 
-    public static void invalidateReference(){
-        db = null;
+    /**
+     * Closes and forgets the shared connection. Required after the database file was
+     * replaced (e.g. by an imported backup) so that the next access opens the new file.
+     */
+    public static synchronized void invalidateReference() {
+        if (db != null) {
+            try {
+                db.close();
+            } catch (RuntimeException ignored) {
+                // The connection is already gone - nothing to do.
+            }
+            db = null;
+        }
     }
 
     public StepCountDbHelper(Context context) {
-        super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        this.context = context;
+        super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
+        this.context = context.getApplicationContext();
     }
+
     public void onCreate(SQLiteDatabase db) {
         db.execSQL(SQL_CREATE_ENTRIES);
+        db.execSQL(SQL_CREATE_INDEX);
     }
+
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Fill when upgrading DB
+        if (oldVersion < 3) {
+            // Version 3 only adds an index on the timestamp column. Creating it here makes
+            // interval queries independent of the table size.
+            db.execSQL(SQL_CREATE_INDEX);
+        }
     }
+
     public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
         onUpgrade(db, oldVersion, newVersion);
     }
@@ -98,7 +131,7 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
      * Stores the given StepCount in database. EndTime will be used for KEY_TIMESTAMP.
      * @param stepCount the StepCount to save.
      */
-    public void addStepCount(StepCount stepCount){
+    public void addStepCount(StepCount stepCount) {
         // Create a new map of values, where column names are the keys
         ContentValues values = new ContentValues();
         values.put(KEY_STEP_COUNT, stepCount.getStepCount());
@@ -113,18 +146,10 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
     }
 
     /**
-     * Adds StepCount - same as @{link StepCountDbHelper#addStepCount(StepCount)} since we have no ID.
-     * @param stepCount
-     */
-    public void addStepCountWithID(StepCount stepCount){
-        addStepCount(stepCount);
-    }
-
-    /**
      * Return all StepCounts
      * @return all StepCount-Entries
      */
-    public List<StepCount> getAllStepCounts(){
+    public List<StepCount> getAllStepCounts() {
         return getStepCountsForInterval(0, Long.MAX_VALUE);
     }
 
@@ -138,6 +163,7 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
     public List<StepCount> getStepCountsForInterval(long start_time, long end_time) {
         Cursor c = getDatabase(this).query(TABLE_NAME,
                 new String[]{
+                        KEY_ID,
                         KEY_STEP_COUNT,
                         KEY_TIMESTAMP,
                         KEY_WALKING_MODE
@@ -145,106 +171,121 @@ public class StepCountDbHelper  extends SQLiteOpenHelper {
                 KEY_TIMESTAMP + " >= ? AND " + KEY_TIMESTAMP + " <= ?", new String[]{String.valueOf(start_time),
                         String.valueOf(end_time)}, null, null, KEY_TIMESTAMP + " ASC");
         WalkingModeDbHelper walkingModeDbHelper = new WalkingModeDbHelper(context);
+        // Resolving the walking mode per row would issue one query per row. Load all modes once
+        // instead - there are only a handful of them.
+        Map<Long, WalkingMode> walkingModes = new HashMap<>();
+        for (WalkingMode mode : walkingModeDbHelper.getAllWalkingModes(true)) {
+            walkingModes.put(mode.getId(), mode);
+        }
         List<StepCount> steps = new ArrayList<>();
         long start = start_time;
-        while (c.moveToNext()) {
-            StepCount s = new StepCount();
-            s.setStartTime(start);
-            s.setEndTime(c.getLong(c.getColumnIndexOrThrow(KEY_TIMESTAMP)));
-            s.setStepCount(c.getInt(c.getColumnIndexOrThrow(KEY_STEP_COUNT)));
-            s.setWalkingMode(walkingModeDbHelper.getWalkingMode(c.getInt(c.getColumnIndexOrThrow(KEY_WALKING_MODE))));
-            steps.add(s);
-            start = s.getEndTime();
+        try {
+            while (c.moveToNext()) {
+                StepCount s = new StepCount();
+                s.setId(c.getLong(c.getColumnIndexOrThrow(KEY_ID)));
+                s.setStartTime(start);
+                s.setEndTime(c.getLong(c.getColumnIndexOrThrow(KEY_TIMESTAMP)));
+                s.setStepCount(c.getInt(c.getColumnIndexOrThrow(KEY_STEP_COUNT)));
+                long walkingModeId = c.getLong(c.getColumnIndexOrThrow(KEY_WALKING_MODE));
+                WalkingMode mode = walkingModes.get(walkingModeId);
+                if (mode == null) {
+                    mode = walkingModeDbHelper.getWalkingMode((int) walkingModeId);
+                }
+                s.setWalkingMode(mode);
+                steps.add(s);
+                start = s.getEndTime();
+            }
+        } finally {
+            c.close();
         }
-        c.close();
         return steps;
     }
 
-    public StepCount getLatestStepCount(){
-        Cursor c = getDatabase(this).query(TABLE_NAME,
-                new String[]{
-                        KEY_STEP_COUNT,
-                        KEY_TIMESTAMP,
-                        KEY_WALKING_MODE
-                },
-                null, null, null, null, KEY_TIMESTAMP + " DESC", "1");
-        WalkingModeDbHelper walkingModeDbHelper = new WalkingModeDbHelper(context);
-        StepCount s = null;
-        while (c.moveToNext()) {
-            s = new StepCount();
-            s.setEndTime(c.getLong(c.getColumnIndexOrThrow(KEY_TIMESTAMP)));
-            s.setStepCount(c.getInt(c.getColumnIndexOrThrow(KEY_STEP_COUNT)));
-            s.setWalkingMode(walkingModeDbHelper.getWalkingMode(c.getInt(c.getColumnIndexOrThrow(KEY_WALKING_MODE))));
-        }
-        c.close();
-        return s;
+    public StepCount getLatestStepCount() {
+        return getStepCount(KEY_TIMESTAMP + " DESC");
     }
 
-    public StepCount getFirstStepCount(){
+    public StepCount getFirstStepCount() {
+        return getStepCount(KEY_TIMESTAMP + " ASC");
+    }
+
+    private StepCount getStepCount(String orderBy) {
         Cursor c = getDatabase(this).query(TABLE_NAME,
                 new String[]{
+                        KEY_ID,
                         KEY_STEP_COUNT,
                         KEY_TIMESTAMP,
                         KEY_WALKING_MODE
                 },
-                null, null, null, null, KEY_TIMESTAMP + " ASC", "1");
+                null, null, null, null, orderBy, "1");
         WalkingModeDbHelper walkingModeDbHelper = new WalkingModeDbHelper(context);
         StepCount s = null;
-        while (c.moveToNext()) {
-            s = new StepCount();
-            s.setEndTime(c.getLong(c.getColumnIndexOrThrow(KEY_TIMESTAMP)));
-            s.setStepCount(c.getInt(c.getColumnIndexOrThrow(KEY_STEP_COUNT)));
-            s.setWalkingMode(walkingModeDbHelper.getWalkingMode(c.getInt(c.getColumnIndexOrThrow(KEY_WALKING_MODE))));
+        try {
+            if (c.moveToNext()) {
+                s = new StepCount();
+                s.setId(c.getLong(c.getColumnIndexOrThrow(KEY_ID)));
+                s.setEndTime(c.getLong(c.getColumnIndexOrThrow(KEY_TIMESTAMP)));
+                s.setStepCount(c.getInt(c.getColumnIndexOrThrow(KEY_STEP_COUNT)));
+                s.setWalkingMode(walkingModeDbHelper.getWalkingMode(c.getInt(c.getColumnIndexOrThrow(KEY_WALKING_MODE))));
+            }
+        } finally {
+            c.close();
         }
-        c.close();
         return s;
     }
 
     /**
-     * Updates the given step count in database based on end timestamp
+     * Updates the given step count in database.
+     * <p>
+     * The row is identified by its primary key when available. Older call sites that only
+     * know the end timestamp fall back to the most recent row with that timestamp, so that
+     * a duplicate timestamp can never update more than one row.
      *
      * @param stepCount The step count to save
      */
     public void updateStepCount(StepCount stepCount) {
-        this.updateStepCount(stepCount, stepCount.getEndTime());
-    }
-
-    /**
-     * Updates the given step count in database based on end timestamp
-     *
-     * @param stepCount The step count to save
-     * @param oldEndTime The original end time to determine which entry should be updated.
-     */
-    public void updateStepCount(StepCount stepCount, long oldEndTime){
         // Create a new map of values, where column names are the keys
         ContentValues values = new ContentValues();
         values.put(KEY_STEP_COUNT, stepCount.getStepCount());
         values.put(KEY_WALKING_MODE, (stepCount.getWalkingMode() != null) ? stepCount.getWalkingMode().getId() : 1);
         values.put(KEY_TIMESTAMP, stepCount.getEndTime());
 
-        // Update the row, returning the primary key value of the new row
-        getDatabase(this).update(
-                TABLE_NAME,
-                values,
-                KEY_TIMESTAMP + " = ?",
-                new String[]{String.valueOf(oldEndTime)}
-        );
+        if (stepCount.getId() > 0) {
+            getDatabase(this).update(
+                    TABLE_NAME,
+                    values,
+                    KEY_ID + " = ?",
+                    new String[]{String.valueOf(stepCount.getId())}
+            );
+        } else {
+            getDatabase(this).update(
+                    TABLE_NAME,
+                    values,
+                    KEY_ID + " = (SELECT " + KEY_ID + " FROM " + TABLE_NAME +
+                            " WHERE " + KEY_TIMESTAMP + " = ? ORDER BY " + KEY_ID + " DESC LIMIT 1)",
+                    new String[]{String.valueOf(stepCount.getEndTime())}
+            );
+        }
     }
 
     /**
      * Deletes the given StepCount from database
      * @param stepCount The StepCount to delete.
      */
-    public void deleteStepCount(StepCount stepCount){
-        String selection = KEY_TIMESTAMP + " = ?";
-        String[] selectionArgs = {String.valueOf(stepCount.getEndTime())};
-        this.getDatabase(this).delete(TABLE_NAME, selection, selectionArgs);
+    public void deleteStepCount(StepCount stepCount) {
+        if (stepCount.getId() > 0) {
+            getDatabase(this).delete(TABLE_NAME, KEY_ID + " = ?",
+                    new String[]{String.valueOf(stepCount.getId())});
+            return;
+        }
+        getDatabase(this).delete(TABLE_NAME, KEY_TIMESTAMP + " = ?",
+                new String[]{String.valueOf(stepCount.getEndTime())});
     }
 
     /**
      * Deletes all StepCounts from database
      */
-    public void deleteAllStepCounts(){
+    public void deleteAllStepCounts() {
         getDatabase(this).execSQL("delete from " + TABLE_NAME);
     }
 

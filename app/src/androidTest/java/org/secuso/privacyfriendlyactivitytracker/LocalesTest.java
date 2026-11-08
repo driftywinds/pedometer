@@ -47,6 +47,7 @@ import org.junit.Before;
 import org.junit.BeforeClass;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.junit.runner.RunWith;
 import org.junit.runners.Parameterized;
 import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
@@ -70,7 +71,8 @@ public class LocalesTest {
         }
     };
     @Rule
-    public GrantPermissionRule activityRecognitionPermission = (android.os.Build.VERSION.SDK_INT >= 29 ? GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION) : null);
+    public TestRule activityRecognitionPermission =
+            TestRules.grantFromSdk(29, Manifest.permission.ACTIVITY_RECOGNITION);
 
     @BeforeClass
     public static void initAll() {

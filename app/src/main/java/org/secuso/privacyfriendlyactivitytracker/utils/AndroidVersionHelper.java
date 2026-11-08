@@ -32,30 +32,53 @@ import org.secuso.privacyfriendlyactivitytracker.R;
  */
 public class AndroidVersionHelper {
     /**
-     * Decides whether the current soft- and hardware setup allows to use hardware step detection
-     * @param pm An instance of the android PackageManager
-     * @return true if hardware step detection can be used otherwise false
+     * Whether the device has a hardware step counter sensor.
      */
-    public static boolean supportsStepDetector(PackageManager pm) {
-        // (Hardware) step detection was introduced in KitKat (4.4 / API 19)
-        // https://developer.android.com/about/versions/android-4.4.html
+    public static boolean hasStepCounter(PackageManager pm) {
         return Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT
-                // In addition to the system version
-                // the hardware step detection is not supported on every device
-                // let's check the device's ability.
-                && pm.hasSystemFeature(PackageManager.FEATURE_SENSOR_STEP_COUNTER)
+                && pm.hasSystemFeature(PackageManager.FEATURE_SENSOR_STEP_COUNTER);
+    }
+
+    /**
+     * Whether the device has a hardware step detector sensor.
+     */
+    public static boolean hasStepDetector(PackageManager pm) {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT
                 && pm.hasSystemFeature(PackageManager.FEATURE_SENSOR_STEP_DETECTOR);
     }
 
     /**
-     * Decides whether the hardware step counter should be used. In this case the step counter-service
-     * will not show any notification and update the step count not in real time. This helps to save
-     * energy and increases the accuracy - but is only available on some devices.
+     * Decides whether the current soft- and hardware setup allows to use hardware step detection.
+     * Devices with only one of the two sensors are supported as well: the step detector can be
+     * used without a counter and vice versa.
+     *
+     * @param pm An instance of the android PackageManager
+     * @return true if hardware step detection can be used otherwise false
+     */
+    public static boolean supportsStepDetector(PackageManager pm) {
+        return hasStepCounter(pm) || hasStepDetector(pm);
+    }
+
+    /**
+     * Decides whether the hardware step counter should be used. In this case the step counter-
+     * service will not show any notification and update the step count not in real time. This
+     * helps to save energy and increases the accuracy - but is only available on some devices.
+     *
      * @param context An instance of the originating Context
      * @return true if hardware step counter should and can be used.
      */
     public static boolean isHardwareStepCounterEnabled(Context context){
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        return supportsStepDetector(context.getPackageManager()) && sharedPref.getBoolean(context.getString(R.string.pref_use_step_hardware), false);
+        return hasStepCounter(context.getPackageManager())
+                && sharedPref.getBoolean(context.getString(R.string.pref_use_step_hardware), false);
+    }
+
+    /**
+     * Whether hardware step detection (counter or detector) should be used at all.
+     */
+    public static boolean isHardwareStepDetectionEnabled(Context context) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+        return supportsStepDetector(context.getPackageManager())
+                && sharedPref.getBoolean(context.getString(R.string.pref_use_step_hardware), false);
     }
 }

@@ -63,6 +63,8 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
     private int stepCountSaved;
     private int stepCount;
     private final double distance = 100;
+    private boolean bound;
+    private boolean receiverRegistered;
 
     private TextView mTextViewSteps;
 
@@ -96,6 +98,8 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
             Intent intent = new Intent(this, WalkingModesActivity.class);
             intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
             startActivity(intent);
+            finish();
+            return;
         }
 
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
@@ -113,11 +117,15 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
         mTextViewSteps = findViewById(R.id.walking_mode_learning_steps);
         TextView textViewDistance = findViewById(R.id.walking_mode_learning_distance);
         if (textViewDistance != null) {
-            textViewDistance.setText(String.valueOf(UnitHelper.metersToUsersLengthUnit(this.distance, this)));
+            // The reference distance is 100 m. Convert it to the user's small length unit
+            // (m or ft) instead of always showing meters.
+            textViewDistance.setText(UnitHelper.formatKilometers(
+                    UnitHelper.metersToKilometers(this.distance), this).getValue());
         }
         TextView textViewDistanceTitle = findViewById(R.id.walking_mode_learning_distance_title);
         if (textViewDistanceTitle != null) {
-            textViewDistanceTitle.setText(UnitHelper.usersLengthDescriptionForMeters(this));
+            textViewDistanceTitle.setText(UnitHelper.formatKilometers(
+                    UnitHelper.metersToKilometers(this.distance), this).getUnit());
         }
         Button buttonStop = findViewById(R.id.walking_mode_learning_stop_button);
         if (buttonStop != null) {
@@ -128,18 +136,39 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
         filterRefreshUpdate.addAction(AbstractStepDetectorService.BROADCAST_ACTION_STEPS_DETECTED);
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
+        receiverRegistered = true;
         // Bind to stepDetector
-        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
-        getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+        bindStepDetector();
 
         this.getStepCounts();
         this.updateData();
         this.updateView();
     }
 
+    private void bindStepDetector() {
+        if (bound) {
+            return;
+        }
+        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
+        bound = getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    private void unbindStepDetector() {
+        if (bound) {
+            try {
+                getApplicationContext().unbindService(mServiceConnection);
+            } catch (IllegalArgumentException ignored) {
+                // Already unbound.
+            }
+            bound = false;
+        }
+        myBinder = null;
+    }
+
     @Override
     public void onResume() {
         super.onResume();
+        bindStepDetector();
         // Force refresh of view.
         this.getStepCounts();
         this.updateView();
@@ -147,11 +176,25 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
 
     @Override
     public void onPause() {
-        if (this.mServiceConnection != null && this.myBinder != null && this.myBinder.isBinderAlive()) {
-            getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
-        }
+        unbindStepDetector();
         super.onPause();
+    }
+
+    @Override
+    protected void onDestroy() {
+        unbindStepDetector();
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiverRegistered = false;
+        }
+        // Leaving the screen without pressing "stop" must not leave the learning flag behind:
+        // it would keep step detection enabled forever.
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getApplicationContext());
+        if (sharedPref.getBoolean(getString(R.string.pref_walking_mode_learning_active), false)) {
+            sharedPref.edit().putBoolean(getString(R.string.pref_walking_mode_learning_active), false).apply();
+        }
+        StepDetectionServiceHelper.stopAllIfNotRequired(getApplicationContext());
+        super.onDestroy();
     }
 
 
@@ -179,13 +222,14 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
 
     protected void stopLearning() {
         updateData();
-        if (this.distance == 0 || this.walkingMode == null) {
-            Log.e(LOG_CLASS, "Distance or walking mode is null.");
+        if (this.walkingMode == null) {
+            Log.e(LOG_CLASS, "Walking mode is null.");
+            finish();
             return;
         }
 
         // update walking mode if the user walked at minimum one step
-        if(this.stepCount != 0) {
+        if(this.stepCount > 0) {
             double meterPerStep = this.distance / ((double) this.stepCount);
             this.walkingMode.setStepLength(meterPerStep);
             WalkingModePersistenceHelper.save(this.walkingMode, this);
@@ -200,6 +244,7 @@ public class WalkingModeLearningActivity extends AppCompatActivity implements Vi
         Intent intent = new Intent(this, WalkingModesActivity.class);
         intent.addFlags(Intent.FLAG_ACTIVITY_NO_HISTORY);
         startActivity(intent);
+        finish();
     }
 
     @Override

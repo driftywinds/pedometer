@@ -40,6 +40,12 @@ import java.util.Calendar;
  */
 
 public class TimePreference extends DialogPreference {
+    /**
+     * Legacy default value (18:00 UTC). Older versions wrote it as an absolute timestamp, so it
+     * has to be interpreted as 18:00 local time instead of a timezone-dependent wall clock time.
+     */
+    private static final long LEGACY_DEFAULT_TIME = 64800000L;
+
     private Calendar calendar;
     private TimePicker picker = null;
 
@@ -96,14 +102,27 @@ public class TimePreference extends DialogPreference {
 
     @Override
     protected void onSetInitialValue(boolean restoreValue, Object defaultValue) {
+        long storedValue;
         if (defaultValue == null) {
-            calendar.setTimeInMillis(getPersistedLong(System.currentTimeMillis()));
+            storedValue = getPersistedLong(System.currentTimeMillis());
         } else if (restoreValue) {
-            calendar.setTimeInMillis(Long.parseLong(getPersistedString((String) defaultValue)));
+            storedValue = Long.parseLong(getPersistedString((String) defaultValue));
         } else {
-            calendar.setTimeInMillis(Long.parseLong((String) defaultValue));
+            storedValue = Long.parseLong((String) defaultValue);
         }
+        setCalendarTime(storedValue);
         setSummary(getSummary());
+    }
+
+    private void setCalendarTime(long storedValue) {
+        if (storedValue == LEGACY_DEFAULT_TIME || storedValue <= 0) {
+            Calendar now = Calendar.getInstance();
+            calendar.setTimeInMillis(now.getTimeInMillis());
+            calendar.set(Calendar.HOUR_OF_DAY, 18);
+            calendar.set(Calendar.MINUTE, 0);
+        } else {
+            calendar.setTimeInMillis(storedValue);
+        }
     }
 
     @Override

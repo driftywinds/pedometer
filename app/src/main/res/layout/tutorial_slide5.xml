@@ -73,7 +73,7 @@
             android:layout_height="wrap_content"
             android:paddingLeft="@dimen/desc_padding"
             android:paddingRight="@dimen/desc_padding"
-            android:text="Accelerometer"
+            android:text="@string/accelerometer"
             android:textAlignment="center"
             android:gravity="center"
             android:textColor="@android:color/white"

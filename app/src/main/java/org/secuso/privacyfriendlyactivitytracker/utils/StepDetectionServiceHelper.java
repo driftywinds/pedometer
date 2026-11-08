@@ -37,7 +37,6 @@ import org.secuso.privacyfriendlyactivitytracker.services.AccelerometerStepDetec
 import org.secuso.privacyfriendlyactivitytracker.services.HardwareStepService;
 
 import java.util.Calendar;
-import java.util.Date;
 
 /**
  * Helper class to start and stop the necessary services
@@ -49,6 +48,15 @@ public class StepDetectionServiceHelper {
 
     private static final String LOG_CLASS = StepDetectionServiceHelper.class.getName();
 
+    private static final int PERSISTENCE_REQUEST_CODE = 2;
+    private static final int END_OF_DAY_REQUEST_CODE = 5;
+    private static final int MOTIVATION_ALERT_REQUEST_CODE = 1;
+    /**
+     * Value which older versions wrote as default for the motivation alert time (18:00 UTC).
+     * It is interpreted as 18:00 local time.
+     */
+    private static final long LEGACY_DEFAULT_MOTIVATION_ALERT_TIME = 64800000L;
+
     /**
      * Starts the step detection, persistence service and notification service if they are enabled in settings.
      *
@@ -59,7 +67,6 @@ public class StepDetectionServiceHelper {
     }
 
     public static void startAllIfEnabled(boolean forceRealTimeStepDetection, Context context){
-        Log.d("service cycle", "HELPER startALL");
 
         Log.i(LOG_CLASS, "Start of all service requested");
         // Start the step detection if enabled or training is active
@@ -83,7 +90,6 @@ public class StepDetectionServiceHelper {
     }
 
     public static void stopAllIfNotRequired(boolean forceSave, Context context){
-        Log.d("service cycle", "HELPER stopALL");
 
         // Start the step detection if enabled or training is active
         if (!isStepDetectionEnabled(context)) {
@@ -105,7 +111,6 @@ public class StepDetectionServiceHelper {
 
 
     public static void restartStepDetection(Context context){
-        Log.d("service cycle","restartStepDetection called");
         startPersistenceService(context);
         stopStepDetection(context);
         startAllIfEnabled(context);
@@ -197,46 +202,65 @@ public class StepDetectionServiceHelper {
 
     /**
      *  Schedules the step count persistence service.
+     * <p>
+     * One-shot alarms are used instead of repeating alarms: they are re-armed by
+     * {@link StepCountPersistenceReceiver} after every run. This keeps working when the device
+     * is in Doze mode and allows the end-of-day save to be scheduled for every day.
      *
      * @param context The application context
      */
     public static void schedulePersistenceService(Context context) {
-        Intent stepCountPersistenceServiceIntent = new Intent(context, StepCountPersistenceReceiver.class);
-        PendingIntent sender = PendingIntent.getBroadcast(context, 2, stepCountPersistenceServiceIntent, PendingIntent.FLAG_IMMUTABLE);
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            Log.w(LOG_CLASS, "Cannot schedule the persistence service - alarm manager is not available.");
+            return;
+        }
 
         // Fire at next half hour
         Calendar calendar = Calendar.getInstance();
-        calendar.setTime(new Date());
-        int unroundedMinutes = calendar.get(Calendar.MINUTE);
-        int mod = unroundedMinutes % 30;
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
-        calendar.add(Calendar.MINUTE, (30-mod));
+        int unroundedMinutes = calendar.get(Calendar.MINUTE);
+        int mod = unroundedMinutes % 30;
+        int minutesToAdd = (mod == 0) ? 30 : 30 - mod;
+        calendar.add(Calendar.MINUTE, minutesToAdd);
 
-        // Set repeating alarm
-        am.setRepeating(AlarmManager.RTC_WAKEUP, calendar.getTime().getTime(), AlarmManager.INTERVAL_HALF_HOUR, sender);
-        Log.i(LOG_CLASS, "Scheduled repeating persistence service at start time " + calendar.getTime().toString());
+        setAlarm(am, calendar.getTimeInMillis(),
+                getPersistencePendingIntent(context, PERSISTENCE_REQUEST_CODE));
+        Log.i(LOG_CLASS, "Scheduled persistence service at start time " + calendar.getTime());
 
-
-        //TODO find out if this replaces the other alarm or not - should not with different requestCode!
         // End of day save
-        PendingIntent endSender = PendingIntent.getBroadcast(context, 5, stepCountPersistenceServiceIntent, PendingIntent.FLAG_IMMUTABLE);
         Calendar daysEnd = Calendar.getInstance();
         daysEnd.set(Calendar.HOUR_OF_DAY, 23);
         daysEnd.set(Calendar.MINUTE, 59);
         daysEnd.set(Calendar.SECOND, 0);
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            try {
-                am.setExact(AlarmManager.RTC_WAKEUP, daysEnd.getTime().getTime(), endSender);
-            } catch (SecurityException e) {
-                Log.e(LOG_CLASS, "Could not schedule end of day persistence service. " + e.getMessage());
-            }
-        } else{
-            am.set(AlarmManager.RTC_WAKEUP, daysEnd.getTime().getTime(), endSender);
+        daysEnd.set(Calendar.MILLISECOND, 0);
+        if (daysEnd.getTimeInMillis() <= System.currentTimeMillis()) {
+            daysEnd.add(Calendar.DAY_OF_MONTH, 1);
         }
-        Log.i(LOG_CLASS, "Scheduled end of day persistence service at time " + daysEnd.getTime().toString());
+        setAlarm(am, daysEnd.getTimeInMillis(),
+                getPersistencePendingIntent(context, END_OF_DAY_REQUEST_CODE));
+        Log.i(LOG_CLASS, "Scheduled end of day persistence service at time " + daysEnd.getTime());
 
+    }
+
+    private static PendingIntent getPersistencePendingIntent(Context context, int requestCode) {
+        Intent stepCountPersistenceServiceIntent = new Intent(context, StepCountPersistenceReceiver.class);
+        return PendingIntent.getBroadcast(context, requestCode, stepCountPersistenceServiceIntent,
+                PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+    }
+
+    /**
+     * Sets an alarm which is also delivered in Doze mode. No exact-alarm permission is required,
+     * so the alarm may be delayed by the system but is never dropped because of a missing
+     * special permission.
+     */
+    private static void setAlarm(AlarmManager am, long triggerAtMillis, PendingIntent pendingIntent) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            am.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent);
+        } else {
+            am.set(AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent);
+        }
     }
 
     /**
@@ -249,21 +273,54 @@ public class StepDetectionServiceHelper {
         if(forceSave) {
             startPersistenceService(context);
         }
-        Intent stepCountPersistenceServiceIntent = new Intent(context, StepCountPersistenceReceiver.class);
-        PendingIntent sender = PendingIntent.getBroadcast(context, 2, stepCountPersistenceServiceIntent, PendingIntent.FLAG_IMMUTABLE);
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        am.cancel(sender);
+        if (am == null) {
+            return;
+        }
+        am.cancel(getPersistencePendingIntent(context, PERSISTENCE_REQUEST_CODE));
+        // The end-of-day alarm uses another request code and has to be cancelled explicitly.
+        am.cancel(getPersistencePendingIntent(context, END_OF_DAY_REQUEST_CODE));
     }
 
     /**
-     * Starts the step detection service
-     *
-     * @param context The application context
+     * Asks the step detector service to persist the current step count.
      */
     public static void startPersistenceService(Context context) {
         Log.i(LOG_CLASS, "Started persistence service.");
-        Intent stepCountPersistenceServiceIntent = new Intent(context, StepCountPersistenceReceiver.class);
-        context.sendBroadcast(stepCountPersistenceServiceIntent);
+        saveStepsNow(context, -1);
+    }
+
+    /**
+     * Asks the step detector service to store the steps which were counted since the last save.
+     * <p>
+     * If the service is not running, it is started (as a foreground service where required).
+     * The call is best effort: a background start may be rejected by the system, in which case
+     * the persisted alarm will try again later.
+     *
+     * @param context        The application context
+     * @param walkingModeId  The walking mode the steps belong to, or a value &lt;= 0 for the
+     *                       currently active mode
+     */
+    public static void saveStepsNow(Context context, long walkingModeId) {
+        Intent intent = new Intent(context, Factory.getStepDetectorServiceClass(context));
+        intent.setAction(AbstractStepDetectorService.ACTION_SAVE_STEPS);
+        if (walkingModeId > 0) {
+            intent.putExtra(AbstractStepDetectorService.EXTENDED_DATA_WALKING_MODE_ID, walkingModeId);
+        }
+        Context appContext = context.getApplicationContext();
+        try {
+            appContext.startService(intent);
+        } catch (RuntimeException e) {
+            // Starting a background service is restricted since Android 8. Try the foreground
+            // variant, which may still be rejected when the app is in the background.
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    appContext.startForegroundService(intent);
+                }
+            } catch (RuntimeException foregroundException) {
+                Log.e(LOG_CLASS, "Could not ask the step detector to save the steps.", foregroundException);
+            }
+        }
     }
 
     /**
@@ -297,40 +354,50 @@ public class StepDetectionServiceHelper {
      */
     public static void setMotivationAlert(Context context){
         Log.i(LOG_CLASS, "Setting motivation alert alarm");
-        Intent motivationAlertIntent = new Intent(context, MotivationAlertReceiver.class);
-        PendingIntent sender = PendingIntent.getBroadcast(context, 1, motivationAlertIntent, PendingIntent.FLAG_IMMUTABLE);
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
+        if (am == null) {
+            return;
+        }
+        long triggerAt = getNextMotivationAlertTime(context);
+        setAlarm(am, triggerAt, getMotivationAlertPendingIntent(context));
+        Log.i(LOG_CLASS, "Scheduled motivation alert for " + Calendar.getInstance().getTime());
+    }
 
+    /**
+     * Calculates the next point in time at which the motivation alert should be shown.
+     * <p>
+     * The preference stores an absolute timestamp which was created by the time picker. Only its
+     * hour and minute are reused (in the current timezone); the date is always today or tomorrow.
+     * The legacy default value (18:00 UTC) is treated as 18:00 local time so that the default
+     * does not shift with the timezone.
+     */
+    public static long getNextMotivationAlertTime(Context context) {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        long timestamp = sharedPref.getLong(context.getString(R.string.pref_notification_motivation_alert_time), 64800000);
+        long timestamp = sharedPref.getLong(
+                context.getString(R.string.pref_notification_motivation_alert_time),
+                LEGACY_DEFAULT_MOTIVATION_ALERT_TIME);
         Calendar calendar = Calendar.getInstance();
-        calendar.setTimeInMillis(timestamp);
-        calendar.set(Calendar.YEAR, Calendar.getInstance().get(Calendar.YEAR));
-        calendar.set(Calendar.MONTH, Calendar.getInstance().get(Calendar.MONTH));
-        calendar.set(Calendar.DAY_OF_MONTH, Calendar.getInstance().get(Calendar.DAY_OF_MONTH));
+        if (timestamp == LEGACY_DEFAULT_MOTIVATION_ALERT_TIME || timestamp <= 0) {
+            calendar.set(Calendar.HOUR_OF_DAY, 18);
+            calendar.set(Calendar.MINUTE, 0);
+        } else {
+            Calendar stored = Calendar.getInstance();
+            stored.setTimeInMillis(timestamp);
+            calendar.set(Calendar.HOUR_OF_DAY, stored.get(Calendar.HOUR_OF_DAY));
+            calendar.set(Calendar.MINUTE, stored.get(Calendar.MINUTE));
+        }
         calendar.set(Calendar.SECOND, 0);
         calendar.set(Calendar.MILLISECOND, 0);
-        if(calendar.before(Calendar.getInstance())){
+        if (calendar.getTimeInMillis() <= System.currentTimeMillis()) {
             calendar.add(Calendar.DAY_OF_MONTH, 1);
         }
+        return calendar.getTimeInMillis();
+    }
 
-        // Set alarm
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            try {
-                am.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender);
-            } catch (SecurityException e) {
-                Log.e(LOG_CLASS, "Could not schedule motivation alert. " + e.getMessage());
-            }
-        }else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-            try {
-                am.setExact(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender);
-            }  catch (SecurityException e) {
-                Log.e(LOG_CLASS, "Could not schedule motivation alert. " + e.getMessage());
-            }
-        }else{
-            am.set(AlarmManager.RTC_WAKEUP, calendar.getTimeInMillis(), sender);
-        }
-        Log.i(LOG_CLASS, "Scheduled motivation alert at start time " + calendar.getTime().toGMTString());
+    private static PendingIntent getMotivationAlertPendingIntent(Context context) {
+        Intent motivationAlertIntent = new Intent(context, MotivationAlertReceiver.class);
+        return PendingIntent.getBroadcast(context, MOTIVATION_ALERT_REQUEST_CODE,
+                motivationAlertIntent, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
     }
 
     /**
@@ -339,9 +406,9 @@ public class StepDetectionServiceHelper {
      */
     public static void cancelMotivationAlert(Context context){
         Log.i(LOG_CLASS, "Canceling motivation alert alarm");
-        Intent motivationAlertIntent = new Intent(context, MotivationAlertReceiver.class);
-        PendingIntent sender = PendingIntent.getBroadcast(context, 1, motivationAlertIntent, PendingIntent.FLAG_IMMUTABLE);
         AlarmManager am = (AlarmManager) context.getSystemService(Context.ALARM_SERVICE);
-        am.cancel(sender);
+        if (am != null) {
+            am.cancel(getMotivationAlertPendingIntent(context));
+        }
     }
 }

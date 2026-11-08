@@ -17,29 +17,25 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.receivers;
 
-import static org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService.CHANNEL_ID;
-
+import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
-import android.content.ComponentName;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
-import android.content.ServiceConnection;
 import android.content.SharedPreferences;
-import android.os.IBinder;
+import android.os.Build;
 import android.preference.PreferenceManager;
-import android.provider.Settings;
 import android.util.Log;
 
 import androidx.core.app.NotificationCompat;
+import androidx.core.app.NotificationManagerCompat;
 import androidx.core.content.ContextCompat;
-import androidx.legacy.content.WakefulBroadcastReceiver;
 
-import org.secuso.privacyfriendlyactivitytracker.Factory;
 import org.secuso.privacyfriendlyactivitytracker.R;
 import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
-import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
+import org.secuso.privacyfriendlyactivitytracker.utils.NotificationHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 import java.util.ArrayList;
@@ -52,104 +48,121 @@ import java.util.Set;
 
 /**
  * Receives the motivation alert event and notifies the user.
+ * <p>
+ * The receiver does not bind to the step detector service anymore: binding could fail (for
+ * example because of background execution limits), in which case the alert was neither shown
+ * nor rescheduled. The step count is read from the database instead and the alarm is always
+ * re-armed.
  *
  * @author Tobias Neidig
  * @version 20160729
  */
 
-public class MotivationAlertReceiver extends WakefulBroadcastReceiver {
+public class MotivationAlertReceiver extends BroadcastReceiver {
     public static final int NOTIFICATION_ID = 0;
+    public static final String CHANNEL_ID = "motivation_alert";
     private static final String LOG_CLASS = MotivationAlertReceiver.class.getName();
-    private Context context;
-    private AbstractStepDetectorService.StepDetectorBinder myBinder = null;
-
-
-    private final ServiceConnection mServiceConnection = new ServiceConnection() {
-
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            myBinder = null;
-        }
-
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            myBinder = (AbstractStepDetectorService.StepDetectorBinder) service;
-            motivate();
-
-            context.getApplicationContext().unbindService(mServiceConnection);
-        }
-    };
 
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.i(LOG_CLASS, "Motivate the user!");
+        Context appContext = context.getApplicationContext();
+        try {
+            showMotivationIfRequired(appContext);
+        } catch (RuntimeException e) {
+            Log.e(LOG_CLASS, "Could not show the motivation notification.", e);
+        } finally {
+            // The alarm is one-shot; it has to be re-armed in every case, otherwise the
+            // motivation alert would silently stop working.
+            if (StepDetectionServiceHelper.isMotivationAlertEnabled(appContext)) {
+                StepDetectionServiceHelper.setMotivationAlert(appContext);
+            }
+        }
+    }
 
-        this.context = context;
-
+    private void showMotivationIfRequired(Context context) {
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        float criterion = Float.parseFloat(sharedPref.getString(context.getString(R.string.pref_notification_motivation_alert_criterion), "100"));
+        float criterion = parseCriterion(sharedPref, context);
         if (criterion < 0 || criterion > 100) {
             Log.e(LOG_CLASS, "Invalid motivation criterion. Cannot notify the user.");
             return;
         }
 
-        // bind to service
-        Intent serviceIntent = new Intent(context, Factory.getStepDetectorServiceClass(context));
-        context.getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
-    }
-
-    /**
-     * Shows the motivation notification to user
-     */
-    private void motivate() {
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        float criterion = Float.parseFloat(sharedPref.getString(context.getString(R.string.pref_notification_motivation_alert_criterion), "100"));
         int stepCount = StepCountPersistenceHelper.getStepCountForDay(Calendar.getInstance(), context);
-        if (myBinder != null) {
-            stepCount += myBinder.stepsSinceLastSave();
-        } else {
-            Log.w(LOG_CLASS, "Cannot get steps from binder.");
-        }
-        int dailyGoal = Integer.parseInt(sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "100"));
+        int dailyGoal = getDailyGoal(sharedPref, context);
         if (dailyGoal * criterion / 100 <= stepCount) {
             Log.i(LOG_CLASS, "No motivation required.");
-            // Reschedule alarm for tomorrow
-            StepDetectionServiceHelper.startAllIfEnabled(context);
             return;
         }
 
-        Set<String> defaultStringSet = new HashSet<>(Arrays.asList(context.getResources().getStringArray(R.array.pref_default_notification_motivation_alert_messages)));
-        List<String> motivationTexts = new ArrayList<>(sharedPref.getStringSet(context.getString(R.string.pref_notification_motivation_alert_texts),  defaultStringSet));
-
-        if (motivationTexts.size() == 0) {
+        Set<String> defaultStringSet = new HashSet<>(Arrays.asList(
+                context.getResources().getStringArray(R.array.pref_default_notification_motivation_alert_messages)));
+        Set<String> storedTexts = sharedPref.getStringSet(
+                context.getString(R.string.pref_notification_motivation_alert_texts), defaultStringSet);
+        List<String> motivationTexts = new ArrayList<>(storedTexts);
+        if (motivationTexts.isEmpty()) {
             Log.e(LOG_CLASS, "Motivation texts are empty. Cannot notify the user.");
-            // Reschedule alarm for tomorrow
-            StepDetectionServiceHelper.startAllIfEnabled(context);
             return;
         }
-
         Collections.shuffle(motivationTexts);
         String motivationText = motivationTexts.get(0);
 
-        Intent intent = new Intent(context, MainActivity.class);
-        PendingIntent pIntent = PendingIntent.getActivity(context, 0, intent, PendingIntent.FLAG_IMMUTABLE);
+        ensureChannel(context);
+        if (!NotificationHelper.canPostNotifications(context, CHANNEL_ID)) {
+            Log.i(LOG_CLASS, "Notifications are disabled for the app - skipping the alert.");
+            return;
+        }
 
-        // Build the notification
-        NotificationManager notificationManager = (NotificationManager) context.getApplicationContext().getSystemService(Context.NOTIFICATION_SERVICE);
+        Intent mainIntent = new Intent(context, MainActivity.class);
+        PendingIntent pendingIntent = PendingIntent.getActivity(context, 0, mainIntent,
+                PendingIntent.FLAG_IMMUTABLE);
 
-        NotificationCompat.Builder mBuilder = new NotificationCompat.Builder(context.getApplicationContext())
+        NotificationCompat.Builder builder = new NotificationCompat.Builder(context, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_walk_black_24dp)
                 .setContentTitle(context.getString(R.string.motivation_alert_notification_title))
                 .setAutoCancel(true)
-                .setChannelId(CHANNEL_ID)
-                .setContentIntent(pIntent)
+                .setContentIntent(pendingIntent)
                 .setContentText(motivationText)
-                .setSound(Settings.System.DEFAULT_NOTIFICATION_URI)
-                .setLights(ContextCompat.getColor(context, R.color.colorPrimary), 1000, 1000);
-        // Notify
-        notificationManager.notify(NOTIFICATION_ID, mBuilder.build());
+                .setLights(ContextCompat.getColor(context, R.color.colorPrimary), 1000, 1000)
+                .setPriority(NotificationCompat.PRIORITY_DEFAULT);
+        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID, builder.build());
+    }
 
-        // Reschedule alarm for tomorrow
-        StepDetectionServiceHelper.startAllIfEnabled(context);
+    private float parseCriterion(SharedPreferences sharedPref, Context context) {
+        String value = sharedPref.getString(
+                context.getString(R.string.pref_notification_motivation_alert_criterion), "100");
+        try {
+            return Float.parseFloat(value);
+        } catch (NumberFormatException e) {
+            Log.w(LOG_CLASS, "Invalid motivation criterion, using the default.", e);
+            return 100f;
+        }
+    }
+
+    private int getDailyGoal(SharedPreferences sharedPref, Context context) {
+        String value = sharedPref.getString(context.getString(R.string.pref_daily_step_goal), "10000");
+        try {
+            int goal = Integer.parseInt(value);
+            return goal > 0 ? goal : 10000;
+        } catch (NumberFormatException e) {
+            return 10000;
+        }
+    }
+
+    private void ensureChannel(Context context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) {
+            return;
+        }
+        NotificationManager notificationManager =
+                (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+        if (notificationManager == null
+                || notificationManager.getNotificationChannel(CHANNEL_ID) != null) {
+            return;
+        }
+        NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+                context.getString(R.string.motivation_alert_notification_title),
+                NotificationManager.IMPORTANCE_DEFAULT);
+        channel.setDescription(context.getString(R.string.notification_channel_description));
+        notificationManager.createNotificationChannel(channel);
     }
 }

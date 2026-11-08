@@ -83,7 +83,7 @@ public class UnitHelper {
      * @return the given meters in users length unit
      */
     public static double metersToUsersLengthUnit(double m, Context context) {
-        return m;
+        return kilometerToUsersLengthUnit(metersToKilometers(m), context);
     }
 
     /**
@@ -145,23 +145,13 @@ public class UnitHelper {
     }
 
     /**
-     * Returns the users velocity caption like km or mi
+     * Returns the users small length caption like m or ft
      *
      * @param context The application context
-     * @return velocity caption (e.g. km or mi)
+     * @return small length caption (e.g. m or ft)
      */
     public static String usersSmallLengthDescriptionShort(Context context) {
         return getUsersUnit(USER_SMALL_UNIT_SHORT_DESCRIPTION, context);
-    }
-
-    /**
-     * Returns the users length caption like meters
-     *
-     * @param context The application context
-     * @return length caption (e.g. meters)
-     */
-    public static String usersLengthDescriptionForMeters(Context context) {
-        return "meters";
     }
 
     /**
@@ -198,16 +188,26 @@ public class UnitHelper {
                 return new FormattedUnitPair(formatString("%.2f", joule / 1000, context), context.getString(R.string.kilojoules));
             }
         }else {
-            if (kcal < 100) {
-                return new FormattedUnitPair(formatString("%.2f", kcal / 1000, context), context.getString(R.string.summary_card_calories));
-            } else {
-                return new FormattedUnitPair(formatString("%.2f", kcal, context), context.getString(R.string.summary_card_kilocalories));
-            }
+            // The calculation returns kcal. Show one unit (kcal) instead of switching units,
+            // which previously divided small values by 1000 and displayed them a thousand
+            // times too small.
+            return new FormattedUnitPair(formatString("%.2f", kcal, context), context.getString(R.string.summary_card_kilocalories));
         }
     }
 
     private static String formatString(String format, double d, Context context){
-        return String.format(context.getResources().getConfiguration().locale, format, d);
+        return String.format(getLocale(context), format, d);
+    }
+
+    /**
+     * @return the current locale of the application (also on API < 24).
+     */
+    public static java.util.Locale getLocale(Context context) {
+        android.content.res.Configuration configuration = context.getResources().getConfiguration();
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.N) {
+            return configuration.getLocales().get(0);
+        }
+        return configuration.locale;
     }
 
     /**

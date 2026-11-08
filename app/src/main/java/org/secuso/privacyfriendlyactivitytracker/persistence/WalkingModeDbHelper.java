@@ -40,7 +40,7 @@ import java.util.List;
 
 public class WalkingModeDbHelper extends SQLiteOpenHelper {
     // If you change the database schema, you must increment the database version.
-    public static final int DATABASE_VERSION = 1;
+    public static final int DATABASE_VERSION = 2;
 
     public static final String DATABASE_NAME = "WalkingModes.db";
 
@@ -77,20 +77,27 @@ public class WalkingModeDbHelper extends SQLiteOpenHelper {
      * @param instance Instance of stepCountDbHelper to fetch new db-instance if necessary
      * @return static database instance
      */
-    private static SQLiteDatabase getDatabase(WalkingModeDbHelper instance){
-        if(db == null){
+    private static synchronized SQLiteDatabase getDatabase(WalkingModeDbHelper instance){
+        if(db == null || !db.isOpen()){
             db = instance.getWritableDatabase();
         }
         return db;
     }
 
-    public static void invalidateReference(){
-        db = null;
+    public static synchronized void invalidateReference(){
+        if (db != null) {
+            try {
+                db.close();
+            } catch (RuntimeException ignored) {
+                // Already closed.
+            }
+            db = null;
+        }
     }
 
     public WalkingModeDbHelper(Context context) {
-        super(context, DATABASE_NAME, null, DATABASE_VERSION);
-        this.context = context;
+        super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
+        this.context = context.getApplicationContext();
     }
 
 
@@ -120,7 +127,14 @@ public class WalkingModeDbHelper extends SQLiteOpenHelper {
     }
 
     public void onUpgrade(SQLiteDatabase db, int oldVersion, int newVersion) {
-        // Fill when upgrading DB
+        if (oldVersion < 2) {
+            // Older versions stored the boolean flags as the strings "true"/"false" in
+            // INTEGER columns. Normalise them to 0/1 so that comparisons are well defined.
+            db.execSQL("UPDATE " + TABLE_NAME + " SET " + KEY_IS_ACTIVE +
+                    " = CASE WHEN " + KEY_IS_ACTIVE + " = 'true' OR " + KEY_IS_ACTIVE + " = 1 THEN 1 ELSE 0 END");
+            db.execSQL("UPDATE " + TABLE_NAME + " SET " + KEY_IS_DELETED +
+                    " = CASE WHEN " + KEY_IS_DELETED + " = 'true' OR " + KEY_IS_DELETED + " = 1 THEN 1 ELSE 0 END");
+        }
     }
 
     public void onDowngrade(SQLiteDatabase db, int oldVersion, int newVersion) {
@@ -146,20 +160,6 @@ public class WalkingModeDbHelper extends SQLiteOpenHelper {
     public long addWalkingMode(WalkingMode walkingMode, SQLiteDatabase db){
         ContentValues values = walkingMode.toContentValues();
         return db.insert(
-                TABLE_NAME,
-                null,
-                values);
-    }
-
-    /**
-     * Inserts the given walking mode as new entry and sets the id to id of given object.
-     *
-     * @param walkingMode    The walking mode which should be stored
-     */
-    public void addWalkingModeWithID(WalkingMode walkingMode){
-        ContentValues values = walkingMode.toContentValues();
-        values.put(KEY_ID, walkingMode.getId());
-        getDatabase(this).insert(
                 TABLE_NAME,
                 null,
                 values);
@@ -194,7 +194,7 @@ public class WalkingModeDbHelper extends SQLiteOpenHelper {
      * @return The walking mode with active-flag set
      */
     public WalkingMode getActiveWalkingMode() {
-        Cursor c = getCursor(KEY_IS_ACTIVE + " = ?", new String[]{String.valueOf(true)});
+        Cursor c = getCursor(KEY_IS_ACTIVE + " = ?", new String[]{"1"});
         WalkingMode walkingMode;
         if (c.getCount() == 0) {
             walkingMode = null;
@@ -222,7 +222,10 @@ public class WalkingModeDbHelper extends SQLiteOpenHelper {
      * @return a list of walking modes
      */
     public List<WalkingMode> getAllWalkingModes(boolean withDeleted){
-        Cursor c = getCursor(KEY_IS_DELETED + " = ?", new String[]{String.valueOf(withDeleted)});
+        // "with deleted" means that soft-deleted modes are included as well.
+        Cursor c = withDeleted
+                ? getCursor(null, null)
+                : getCursor(KEY_IS_DELETED + " = ?", new String[]{"0"});
         List<WalkingMode> walkingModes = new ArrayList<>();
         if (c == null) {
             return walkingModes;

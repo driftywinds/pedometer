@@ -67,6 +67,8 @@ public class DistanceMeasurementActivity extends AppCompatActivity implements Vi
     private boolean start_after_storing_steps;
     private Long start_timestamp;
     private double distance;
+    private boolean bound;
+    private boolean receiverRegistered;
 
     private TextView mTextViewDistance;
     private TextView mTextViewDistanceTitle;
@@ -105,13 +107,9 @@ public class DistanceMeasurementActivity extends AppCompatActivity implements Vi
             buttonStart.setOnClickListener(this);
         }
 
-        IntentFilter filterRefreshUpdate = new IntentFilter();
-        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
-        filterRefreshUpdate.addAction(AbstractStepDetectorService.BROADCAST_ACTION_STEPS_DETECTED);
-        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
+        registerReceiverIfNeeded();
         // Bind to stepDetector
-        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
-        getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+        bindStepDetector();
 
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
         start_timestamp = sharedPref.getLong(getString(R.string.pref_distance_measurement_start_timestamp), -1);
@@ -124,21 +122,50 @@ public class DistanceMeasurementActivity extends AppCompatActivity implements Vi
         this.updateView();
     }
 
-    @Override
-    public void onResume() {
-        super.onResume();
+    private void registerReceiverIfNeeded() {
+        if (receiverRegistered) {
+            return;
+        }
         IntentFilter filterRefreshUpdate = new IntentFilter();
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
         filterRefreshUpdate.addAction(AbstractStepDetectorService.BROADCAST_ACTION_STEPS_DETECTED);
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
+        receiverRegistered = true;
+    }
+
+    private void bindStepDetector() {
+        if (bound) {
+            return;
+        }
+        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
+        bound = getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    private void unbindStepDetector() {
+        if (bound) {
+            try {
+                getApplicationContext().unbindService(mServiceConnection);
+            } catch (IllegalArgumentException ignored) {
+                // Already unbound.
+            }
+            bound = false;
+        }
+        myBinder = null;
+    }
+
+    @Override
+    public void onResume() {
+        super.onResume();
+        registerReceiverIfNeeded();
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
         start_timestamp = sharedPref.getLong(getString(R.string.pref_distance_measurement_start_timestamp), -1);
         if(start_timestamp < 0){
             start_timestamp = null;
         }
         if(start_timestamp != null && start_timestamp > 0){
-            Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
-            getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+            bindStepDetector();
+        } else if (start_after_storing_steps) {
+            bindStepDetector();
         }
         // Force refresh of view.
         this.getStepCounts();
@@ -147,21 +174,21 @@ public class DistanceMeasurementActivity extends AppCompatActivity implements Vi
 
     @Override
     public void onPause(){
-        if(this.mServiceConnection != null && this.myBinder != null && this.myBinder.isBinderAlive()){
-            getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
+        unbindStepDetector();
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiverRegistered = false;
         }
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
         super.onPause();
     }
 
     @Override
     public void onDestroy(){
-        if(this.mServiceConnection != null && this.myBinder != null && this.myBinder.isBinderAlive()){
-            getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
+        unbindStepDetector();
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiverRegistered = false;
         }
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
         super.onDestroy();
     }
 
@@ -300,6 +327,9 @@ public class DistanceMeasurementActivity extends AppCompatActivity implements Vi
                         editor.putLong(getString(R.string.pref_distance_measurement_start_timestamp), start_timestamp);
                         editor.apply();
                         StepDetectionServiceHelper.startAllIfEnabled(getApplicationContext());
+                        // The measurement may have been started after the activity was paused;
+                        // bind again so the unsaved steps are included in the distance.
+                        bindStepDetector();
                     }
                     // continue with updating the view
                 case WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED:

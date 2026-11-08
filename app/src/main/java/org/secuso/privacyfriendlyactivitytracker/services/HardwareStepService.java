@@ -17,11 +17,8 @@
 */
 package org.secuso.privacyfriendlyactivitytracker.services;
 
-import android.content.Intent;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
-
-import androidx.annotation.NonNull;
 
 /**
  * Uses the hardware step counter sensor to detect steps.
@@ -47,9 +44,6 @@ public class HardwareStepService extends AbstractStepDetectorService {
     }
 
     @Override
-    protected void onHandleWork(@NonNull Intent intent) {}
-
-    @Override
     public void onSensorChanged(SensorEvent event) {
         switch (event.sensor.getType()) {
             case Sensor.TYPE_STEP_DETECTOR:
@@ -60,14 +54,21 @@ public class HardwareStepService extends AbstractStepDetectorService {
                     this.mStepOffset = event.values[0];
                 }
                 if (this.mStepOffset > event.values[0]) {
-                    // this should never happen?
+                    // The counter was reset (e.g. after a reboot). Start counting from the
+                    // current value instead of silently dropping the steps.
+                    this.mStepOffset = event.values[0];
                     return;
                 }
                 // publish difference between last known step count and the current ones.
-                this.onStepDetected((int) (event.values[0] - mStepOffset));
+                int newSteps = (int) (event.values[0] - mStepOffset);
+                if (newSteps > 0) {
+                    this.onStepDetected(newSteps);
+                }
                 // Set offset to current value so we know it at next event
                 mStepOffset = event.values[0];
                 break;
+            default:
+                // Ignore other sensors.
         }
     }
 }

@@ -18,9 +18,8 @@
 package org.secuso.privacyfriendlyactivitytracker.services;
 
 import android.app.Notification;
-import android.app.NotificationChannel;
 import android.app.NotificationManager;
-import android.app.PendingIntent;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
@@ -36,21 +35,19 @@ import android.os.PowerManager;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
-import androidx.core.app.JobIntentService;
-import androidx.core.app.NotificationCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
-import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
 import org.secuso.privacyfriendlyactivitytracker.activities.TrainingActivity;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
+import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.TrainingPersistenceHelper;
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModePersistenceHelper;
+import org.secuso.privacyfriendlyactivitytracker.receivers.WidgetReceiver;
 import org.secuso.privacyfriendlyactivitytracker.utils.AndroidVersionHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.NotificationHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
-import org.secuso.privacyfriendlyactivitytracker.utils.UnitHelper;
 
 import java.util.Calendar;
 import java.util.List;
@@ -63,7 +60,7 @@ import java.util.List;
  * @version 20160810
  */
 
-public abstract class AbstractStepDetectorService extends JobIntentService implements SensorEventListener, SharedPreferences.OnSharedPreferenceChangeListener {
+public abstract class AbstractStepDetectorService extends Service implements SensorEventListener, SharedPreferences.OnSharedPreferenceChangeListener {
 
     /**
      * Broadcast action identifier for messages broadcasted when new steps were detected
@@ -84,15 +81,35 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
      */
     public static final String ACTION_FORCE_NOTIFICATION = "org.secuso.privacyfriendlyactivitytracker.action.FORCE_NOTIFICATION";
     /**
+     * Action which asks a running step detector service to persist the steps which were counted
+     * since the last save. This replaces binding to the service from a broadcast receiver.
+     */
+    public static final String ACTION_SAVE_STEPS = "org.secuso.privacyfriendlyactivitytracker.action.SAVE_STEPS";
+    /**
+     * Optional extra for {@link #ACTION_SAVE_STEPS}: the id of the walking mode the steps belong
+     * to. Used when the active walking mode changed and the previous steps still belong to the
+     * old mode.
+     */
+    public static final String EXTENDED_DATA_WALKING_MODE_ID = "org.secuso.privacyfriendlyactivitytracker.WALKING_MODE_ID";
+    /**
      * The notification id used for permanent step count notification
      */
-    public static String CHANNEL_ID = "pedometer";
+    public static final String CHANNEL_ID = "pedometer";
     public static final int NOTIFICATION_ID = 42;
+    /**
+     * The notification is posted at most once per second; the step counter updates it on every
+     * detected step, which would otherwise cause one notification update per step.
+     */
+    private static final long NOTIFICATION_UPDATE_INTERVAL_MS = 1000L;
     private static final String LOG_TAG = AbstractStepDetectorService.class.getName();
     private final IBinder mBinder = new StepDetectorBinder();
     private final BroadcastReceiver broadcastReceiver = new BroadcastReceiver();
     private NotificationManager mNotifyManager;
     private PowerManager.WakeLock mWakeLock;
+    private long lastNotificationUpdate = 0;
+    private boolean receiversRegistered = false;
+    private boolean sensorRegistered = false;
+    private WalkingMode activeWalkingMode = null;
     /**
      * Number of steps the user wants to walk every day
      */
@@ -143,7 +160,7 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         LocalBroadcastManager.getInstance(this).sendBroadcast(localIntent);
 
         // Update notification
-        updateNotification();
+        updateNotification(false);
     }
 
     /**
@@ -201,8 +218,14 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         // release wake lock if any
         acquireOrReleaseWakeLock();
         // Unregister sensor listeners
-        SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
-        sensorManager.unregisterListener(this);
+        if (sensorRegistered) {
+            SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
+            if (sensorManager != null) {
+                sensorManager.unregisterListener(this);
+            }
+            sensorRegistered = false;
+        }
+        unregisterReceiversIfNeeded();
         // Cancel notification
         if (mNotifyManager != null && cancelNotificationOnDestroy()) {
             mNotifyManager.cancel(NOTIFICATION_ID);
@@ -211,7 +234,7 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
         sharedPref.unregisterOnSharedPreferenceChangeListener(this);
         // Force save of step count
-        StepCountPersistenceHelper.storeStepCounts(this.mBinder, getApplicationContext(), WalkingModePersistenceHelper.getActiveMode(getApplicationContext()));
+        StepCountPersistenceHelper.storeStepCounts(this.mBinder, getApplicationContext(), getActiveWalkingMode());
         // StepDetectionServiceHelper.startPersistenceService(this);
         super.onDestroy();
     }
@@ -221,60 +244,166 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         Log.i(LOG_TAG, "Starting service cycle." + this.getClass().getName());
         acquireOrReleaseWakeLock();
 
-        if(!StepDetectionServiceHelper.isStepDetectionEnabled(getApplicationContext())){
+        String action = intent != null ? intent.getAction() : null;
+        boolean saveRequested = ACTION_SAVE_STEPS.equals(action);
+
+        if (!StepDetectionServiceHelper.isStepDetectionEnabled(getApplicationContext())) {
+            // The service may still hold steps which were counted before tracking was
+            // disabled. Persist them before this instance disappears.
+            if (saveRequested) {
+                saveSteps(resolveWalkingMode(intent));
+            }
             stopSelf();
+            return START_NOT_STICKY;
         }
 
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
-        boolean counter = Integer.valueOf(sharedPref.getString(this.getString(R.string.pref_which_step_hardware), "0")) == 0;
-
-        // register for sensors
-        if(!AndroidVersionHelper.isHardwareStepCounterEnabled(this)){
-            //use accelerometer
-            SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
-            Sensor sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
-            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL);
-        } else if(counter) {
-            SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
-            Sensor sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
-                Long updateInterval = Long.valueOf(sharedPref.getString(this.getString(R.string.pref_hw_background_counter_frequency), "3600000"));
-                sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL, updateInterval.intValue());
-            } else {
-                sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_NORMAL);
-            }
-        } else {
-            SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
-            Sensor sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
-            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_UI);
-        }
-
+        registerSensors(sharedPref);
 
         // Get daily goal(s) from preferences
-        String d = sharedPref.getString(getString(R.string.pref_daily_step_goal), "10000");
-        this.dailyStepGoal = Integer.parseInt(d);
+        this.dailyStepGoal = readDailyStepGoal(sharedPref);
         sharedPref.registerOnSharedPreferenceChangeListener(this);
 
-        // register for steps-saved-event
-        IntentFilter filterRefreshUpdate = new IntentFilter();
-        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
-        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_INSERTED);
-        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_UPDATED );
-        filterRefreshUpdate.addAction(TrainingActivity.BROADCAST_ACTION_TRAINING_STOPPED);
-        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
-        // load step count from database
-        getStepsAtLastSave();
+        registerReceiversIfNeeded();
 
-        boolean forceNotification = intent != null && ACTION_FORCE_NOTIFICATION.equals(intent.getAction());
-        // Refresh the notification so that it always reflects the current step goal and step
-        // count. This also re-posts it when the system restarted the service in the background
-        // and when the user explicitly asked for it from the home screen.
-        updateNotification();
-        if (forceNotification) {
-            Log.i(LOG_TAG, "Permanent notification was force-triggered.");
+        if (saveRequested) {
+            saveSteps(resolveWalkingMode(intent));
+        } else {
+            // load step count from database
+            getStepsAtLastSave();
+            // Refresh the notification so that it always reflects the current step goal and
+            // step count. This also re-posts it when the system restarted the service in the
+            // background and when the user explicitly asked for it from the home screen.
+            updateNotification(true);
+            if (ACTION_FORCE_NOTIFICATION.equals(action)) {
+                Log.i(LOG_TAG, "Permanent notification was force-triggered.");
+            }
         }
 
         return START_STICKY;
+    }
+
+    /**
+     * Registers the sensor which is used for step detection. Registration happens only once per
+     * service instance and falls back to the accelerometer when the preferred sensor is missing.
+     */
+    private void registerSensors(SharedPreferences sharedPref) {
+        if (sensorRegistered) {
+            return;
+        }
+        SensorManager sensorManager = (SensorManager) getApplicationContext().getSystemService(SENSOR_SERVICE);
+        if (sensorManager == null) {
+            Log.e(LOG_TAG, "Cannot register sensors - sensor manager is not available.");
+            return;
+        }
+        boolean useHardware = AndroidVersionHelper.isHardwareStepDetectionEnabled(this);
+        boolean preferCounter = true;
+        try {
+            preferCounter = Integer.parseInt(sharedPref.getString(getString(R.string.pref_which_step_hardware), "0")) == 0;
+        } catch (NumberFormatException ignored) {
+            // Fall back to the step counter.
+        }
+        android.content.pm.PackageManager pm = getPackageManager();
+        boolean hasCounter = AndroidVersionHelper.hasStepCounter(pm);
+        boolean hasDetector = AndroidVersionHelper.hasStepDetector(pm);
+        boolean useCounter = useHardware && hasCounter && (preferCounter || !hasDetector);
+        int delay = SensorManager.SENSOR_DELAY_NORMAL;
+        Sensor sensor;
+        if (!useHardware) {
+            sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+        } else if (useCounter) {
+            sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        } else if (hasDetector) {
+            sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_DETECTOR);
+            delay = SensorManager.SENSOR_DELAY_UI;
+        } else {
+            sensor = sensorManager.getDefaultSensor(Sensor.TYPE_STEP_COUNTER);
+        }
+        if (sensor == null) {
+            Log.w(LOG_TAG, "Preferred sensor is not available, falling back to the accelerometer.");
+            sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
+            useCounter = false;
+        }
+        if (sensor == null) {
+            Log.e(LOG_TAG, "No sensor is available for step detection.");
+            return;
+        }
+        if (useCounter && Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT) {
+            long updateInterval = StepCountPersistenceHelper.getUpdateInterval(this);
+            int maxReportLatency = (int) Math.min(Integer.MAX_VALUE, updateInterval);
+            sensorRegistered = sensorManager.registerListener(this, sensor, delay, maxReportLatency);
+        } else {
+            sensorRegistered = sensorManager.registerListener(this, sensor, delay);
+        }
+        Log.i(LOG_TAG, "Registered sensor " + sensor.getName() + " for step detection.");
+    }
+
+    /**
+     * Persists the steps which were counted since the last save, updates the notification and
+     * the widget. Reads the active walking mode once and caches it for the notification.
+     */
+    protected void saveSteps(WalkingMode walkingMode) {
+        StepCountPersistenceHelper.storeStepCounts(this.mBinder, getApplicationContext(), walkingMode);
+        activeWalkingMode = walkingMode;
+        getStepsAtLastSave();
+        updateNotification(true);
+        WidgetReceiver.forceWidgetUpdate(getApplicationContext());
+    }
+
+    /**
+     * Resolves the walking mode which the steps to save belong to. The old walking mode is
+     * passed as extra when the mode changed, because those steps were walked in the old mode.
+     */
+    private WalkingMode resolveWalkingMode(Intent intent) {
+        if (intent != null) {
+            long walkingModeId = intent.getLongExtra(EXTENDED_DATA_WALKING_MODE_ID, -1);
+            if (walkingModeId > 0) {
+                WalkingMode mode = WalkingModePersistenceHelper.getItem(walkingModeId, getApplicationContext());
+                if (mode != null) {
+                    return mode;
+                }
+            }
+        }
+        return getActiveWalkingMode();
+    }
+
+    private WalkingMode getActiveWalkingMode() {
+        if (activeWalkingMode == null) {
+            activeWalkingMode = WalkingModePersistenceHelper.getActiveMode(getApplicationContext());
+        }
+        return activeWalkingMode;
+    }
+
+    private int readDailyStepGoal(SharedPreferences sharedPref) {
+        String value = sharedPref.getString(getString(R.string.pref_daily_step_goal), "10000");
+        try {
+            int goal = Integer.parseInt(value);
+            return goal > 0 ? goal : 10000;
+        } catch (NumberFormatException e) {
+            Log.w(LOG_TAG, "Invalid daily step goal, using the default.", e);
+            return 10000;
+        }
+    }
+
+    private void registerReceiversIfNeeded() {
+        if (receiversRegistered) {
+            return;
+        }
+        IntentFilter filterRefreshUpdate = new IntentFilter();
+        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
+        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_INSERTED);
+        filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_UPDATED);
+        filterRefreshUpdate.addAction(TrainingActivity.BROADCAST_ACTION_TRAINING_STOPPED);
+        filterRefreshUpdate.addAction(WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED);
+        LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
+        receiversRegistered = true;
+    }
+
+    private void unregisterReceiversIfNeeded() {
+        if (receiversRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiversRegistered = false;
+        }
     }
 
     @Override
@@ -287,12 +416,12 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
         // Detect changes on preferences and update our internal variable
         if (key.equals(getString(R.string.pref_daily_step_goal))) {
-            dailyStepGoal = Integer.parseInt(sharedPreferences.getString(getString(R.string.pref_daily_step_goal), "10000"));
-            updateNotification();
+            dailyStepGoal = readDailyStepGoal(sharedPreferences);
+            updateNotification(true);
         } else if (key.equals(getString(R.string.pref_notification_permanent_show_steps)) ||
                 key.equals(getString(R.string.pref_notification_permanent_show_distance)) ||
                 key.equals(getString(R.string.pref_notification_permanent_show_calories))) {
-            updateNotification();
+            updateNotification(true);
         } else if(key.equals(getString(R.string.pref_use_wake_lock))){
             acquireOrReleaseWakeLock();
         }
@@ -321,14 +450,29 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
     protected StepCount stepCountFromTotalSteps() {
         StepCount stepCount = new StepCount();
         stepCount.setStepCount(total_steps);
-        stepCount.setWalkingMode(WalkingModePersistenceHelper.getActiveMode(getApplicationContext())); // use current walking mode
+        stepCount.setWalkingMode(getActiveWalkingMode()); // use current walking mode
         return stepCount;
     }
 
     /**
-     * Updates or creates the progress notification
+     * Updates or creates the progress notification immediately.
      */
     protected void updateNotification() {
+        updateNotification(true);
+    }
+
+    /**
+     * Updates or creates the progress notification.
+     *
+     * @param force if false, the notification is posted at most once per
+     *              {@link #NOTIFICATION_UPDATE_INTERVAL_MS} to avoid one notification update per
+     *              detected step
+     */
+    protected void updateNotification(boolean force) {
+        long now = System.currentTimeMillis();
+        if (!force && now - lastNotificationUpdate < NOTIFICATION_UPDATE_INTERVAL_MS) {
+            return;
+        }
         if (mNotifyManager == null) {
             mNotifyManager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
         }
@@ -339,6 +483,7 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
         if(PreferenceManager.getDefaultSharedPreferences(this).getBoolean(this.getString(R.string.pref_step_counter_enabled), true)){
             Notification notification = buildNotification(this.stepCountFromTotalSteps());
             mNotifyManager.notify(NOTIFICATION_ID, notification);
+            lastNotificationUpdate = now;
         }
     }
 
@@ -419,10 +564,17 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
                 case StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED:
                     // Steps were saved, reload step count from database
                     getStepsAtLastSave();
-                    updateNotification();
+                    updateNotification(true);
+                    break;
+                case WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED:
+                    // The active mode changed; refresh the cached instance used for the
+                    // notification and for the next save.
+                    activeWalkingMode = null;
+                    getActiveWalkingMode();
                     break;
                 case TrainingActivity.BROADCAST_ACTION_TRAINING_STOPPED:
                     acquireOrReleaseWakeLock();
+                    break;
                 default:
             }
         }
@@ -430,9 +582,5 @@ public abstract class AbstractStepDetectorService extends JobIntentService imple
 
     void createNotificationChannel() {
         NotificationHelper.ensureTrackingChannel(this);
-    }
-
-    public IBinder getmStepDetectorBinder() {
-        return mBinder;
     }
 }

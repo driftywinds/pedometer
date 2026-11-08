@@ -18,16 +18,12 @@
 package org.secuso.privacyfriendlyactivitytracker.services;
 
 
-import android.content.Intent;
 import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.preference.PreferenceManager;
 import android.util.Log;
 
-import androidx.annotation.NonNull;
-
-import org.jetbrains.annotations.NotNull;
 import org.secuso.privacyfriendlyactivitytracker.R;
 
 import java.util.Arrays;
@@ -57,36 +53,47 @@ public class AccelerometerStepDetectorService extends AbstractStepDetectorServic
     private float accelerometerThreshold;
     private int valid_steps = 0;
     private int validStepsThreshold = 0;
-    //private float[]
 
-    public static AccelerometerStepDetectorService accelerometerStepDetectorService;
     /**
      * Creates an AccelerometerStepDetectorService.
      */
     public AccelerometerStepDetectorService() {
         super();
-        // required empty constructor
-        accelerometerStepDetectorService = this;
     }
 
     @Override
     public void onCreate() {
         super.onCreate();
         SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(this);
-        Log.d("service cycle","accelerometer created");
-        accelerometerThreshold = Float.parseFloat(sharedPref.getString(getString(R.string.pref_accelerometer_threshold), "0.75"));
-        validStepsThreshold = Integer.parseInt(sharedPref.getString(getString(R.string.pref_accelerometer_steps_threshold), "10"));
+        Log.d(LOG_TAG, "accelerometer created");
+        accelerometerThreshold = readThreshold(sharedPref, getString(R.string.pref_accelerometer_threshold), 0.75f);
+        validStepsThreshold = readValidStepsThreshold(sharedPref);
     }
 
-    @Override
-    protected void onHandleWork(@NonNull @NotNull Intent intent) {
-        Log.d("service cycle","accelerometer HANDLEWORK");
+    private float readThreshold(SharedPreferences sharedPref, String key, float defaultValue) {
+        String value = sharedPref.getString(key, String.valueOf(defaultValue));
+        try {
+            float parsed = Float.parseFloat(value);
+            return parsed > 0 ? parsed : defaultValue;
+        } catch (NumberFormatException e) {
+            Log.w(LOG_TAG, "Invalid accelerometer threshold, using the default.", e);
+            return defaultValue;
+        }
+    }
 
+    private int readValidStepsThreshold(SharedPreferences sharedPref) {
+        String value = sharedPref.getString(getString(R.string.pref_accelerometer_steps_threshold), "10");
+        try {
+            int parsed = Integer.parseInt(value);
+            return parsed > 0 ? parsed : 10;
+        } catch (NumberFormatException e) {
+            Log.w(LOG_TAG, "Invalid accelerometer step threshold, using the default.", e);
+            return 10;
+        }
     }
 
     @Override
     public void onSensorChanged(SensorEvent event) {
-      //  Log.d("service cycle","accelerometer sensor change");
 
         if (event.sensor.getType() != Sensor.TYPE_ACCELEROMETER) {
             return;
@@ -94,6 +101,7 @@ public class AccelerometerStepDetectorService extends AbstractStepDetectorServic
 
         if (event.values.length != 3) {
             Log.e(LOG_TAG, "Invalid sensor values.");
+            return;
         }
 
         // the following part will add some basic low/high-pass filter
@@ -235,11 +243,10 @@ public class AccelerometerStepDetectorService extends AbstractStepDetectorServic
         for (long mLastStepDelta : mLastStepDeltas) {
             if (Math.abs(mLastStepDelta - delta) > 200) {
                 numIrregularValues++;
-                break;
             }
         }
 
-        return numIrregularValues < 1;//mLastStepDeltas.length*0.2;
+        return numIrregularValues < mLastStepDeltas.length * 0.2;
     }
 
     /**
@@ -258,7 +265,6 @@ public class AccelerometerStepDetectorService extends AbstractStepDetectorServic
         for (float mLastStepAccelerationDelta : mLastStepAccelerationDeltas) {
             if (Math.abs(mLastStepAccelerationDelta - last_acceleration_diff) > 0.5) {
                 numIrregularAccelerationValues++;
-                break;
             }
         }
         return numIrregularAccelerationValues < mLastStepAccelerationDeltas.length * 0.2;
@@ -266,14 +272,14 @@ public class AccelerometerStepDetectorService extends AbstractStepDetectorServic
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        Log.d("service cycle","accelerometer preference changed");
+        Log.d(LOG_TAG, "accelerometer preference changed");
 
         super.onSharedPreferenceChanged(sharedPreferences, key);
         if (key.equals(getString(R.string.pref_accelerometer_threshold))) {
-            accelerometerThreshold = Float.parseFloat(sharedPreferences.getString(getString(R.string.pref_accelerometer_threshold), "0.75"));
+            accelerometerThreshold = readThreshold(sharedPreferences, key, 0.75f);
         }
         if (key.equals(getString(R.string.pref_accelerometer_steps_threshold))) {
-            validStepsThreshold = Integer.parseInt(sharedPreferences.getString(getString(R.string.pref_accelerometer_steps_threshold), "10"));
+            validStepsThreshold = readValidStepsThreshold(sharedPreferences);
         }
     }
 }

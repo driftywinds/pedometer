@@ -30,6 +30,7 @@ import androidx.test.rule.GrantPermissionRule;
 
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.secuso.privacyfriendlyactivitytracker.tutorial.TutorialActivity;
 
 public class ApplicationTest {
@@ -38,11 +39,14 @@ public class ApplicationTest {
             new ActivityScenarioRule<>(TutorialActivity.class);
 
     @Rule
-    public GrantPermissionRule activityRecognitionPermission = (android.os.Build.VERSION.SDK_INT >= 29 ? GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION) : null);
+    public TestRule activityRecognitionPermission =
+            TestRules.grantFromSdk(29, Manifest.permission.ACTIVITY_RECOGNITION);
     @Rule
-    public GrantPermissionRule foregroundServicePermission = (android.os.Build.VERSION.SDK_INT >= 34 ? GrantPermissionRule.grant(Manifest.permission.FOREGROUND_SERVICE_HEALTH) : null);
+    public TestRule foregroundServicePermission =
+            TestRules.grantFromSdk(34, Manifest.permission.FOREGROUND_SERVICE_HEALTH);
     @Rule
-    public GrantPermissionRule postNotificatuionsPermission = (android.os.Build.VERSION.SDK_INT >= 32 ? GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS) : null);
+    public TestRule postNotificatuionsPermission =
+            TestRules.grantFromSdk(33, Manifest.permission.POST_NOTIFICATIONS);
 
     @Test
     public void canStartApp() {

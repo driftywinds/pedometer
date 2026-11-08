@@ -23,7 +23,9 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.ServiceConnection;
 import android.os.Bundle;
+import android.os.Handler;
 import android.os.IBinder;
+import android.os.Looper;
 import android.util.Log;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -51,8 +53,6 @@ import java.util.Calendar;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Timer;
-import java.util.TimerTask;
 
 /**
  * This activity allows the user to manage the training phases.
@@ -71,7 +71,16 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
     private Map<Integer, WalkingMode> menuWalkingModes;
     private Training training;
     private List<StepCount> stepCounts;
-    private Timer mTimer;
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
+    private final Runnable mDurationUpdater = new Runnable() {
+        @Override
+        public void run() {
+            updateView();
+            mUiHandler.postDelayed(this, 1000);
+        }
+    };
+    private boolean bound;
+    private boolean receiverRegistered;
 
     private TextView mTextViewSteps;
     private TextView mTextViewDistance;
@@ -126,53 +135,63 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
         IntentFilter filterRefreshUpdate = new IntentFilter();
         filterRefreshUpdate.addAction(StepCountPersistenceHelper.BROADCAST_ACTION_STEPS_SAVED);
         filterRefreshUpdate.addAction(AbstractStepDetectorService.BROADCAST_ACTION_STEPS_DETECTED);
+        filterRefreshUpdate.addAction(WalkingModePersistenceHelper.BROADCAST_ACTION_WALKING_MODE_CHANGED);
         LocalBroadcastManager.getInstance(this).registerReceiver(broadcastReceiver, filterRefreshUpdate);
+        receiverRegistered = true;
         // Bind to stepDetector
-        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
-        getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+        bindStepDetector();
         this.getStepCounts();
         this.updateData();
         this.updateView();
-        mTimer = new Timer();
-        mTimer.schedule(new TimerTask() {
+        mUiHandler.removeCallbacks(mDurationUpdater);
+        mUiHandler.postDelayed(mDurationUpdater, 1000);
+    }
 
-            @Override
-            public void run() {
-                // Update the timer - no data update required
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        updateView();
-                    }
-                });
+    private void bindStepDetector() {
+        if (bound) {
+            return;
+        }
+        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
+        bound = getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+    }
+
+    private void unbindStepDetector() {
+        if (bound) {
+            try {
+                getApplicationContext().unbindService(mServiceConnection);
+            } catch (IllegalArgumentException ignored) {
+                // The service was already unbound.
             }
-        }, 0, 1000);
+            bound = false;
+        }
+        myBinder = null;
     }
 
     @Override
     public void onResume() {
         super.onResume();
-        Intent serviceIntent = new Intent(this, Factory.getStepDetectorServiceClass(this));
-        getApplicationContext().bindService(serviceIntent, mServiceConnection, Context.BIND_AUTO_CREATE);
+        bindStepDetector();
         // Force refresh of view.
         this.getStepCounts();
         this.updateView();
+        mUiHandler.removeCallbacks(mDurationUpdater);
+        mUiHandler.postDelayed(mDurationUpdater, 1000);
     }
 
     @Override
     public void onPause(){
-        if(this.mServiceConnection != null && this.myBinder != null && this.myBinder.isBinderAlive()){
-            getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
-        }
+        mUiHandler.removeCallbacks(mDurationUpdater);
+        unbindStepDetector();
         super.onPause();
     }
 
     @Override
     public void onDestroy(){
-        if(this.mServiceConnection != null && this.myBinder != null && this.myBinder.isBinderAlive()){
-            getApplicationContext().unbindService(mServiceConnection);
-            myBinder = null;
+        mUiHandler.removeCallbacks(mDurationUpdater);
+        unbindStepDetector();
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiverRegistered = false;
         }
         super.onDestroy();
     }
@@ -213,9 +232,6 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
         double distance = 0;
         double calories = 0;
         for (StepCount s : stepCounts) {
-            Calendar end = Calendar.getInstance();
-            end.setTimeInMillis(s.getEndTime());
-
             stepCount += s.getStepCount();
             distance += s.getDistance();
             calories += s.getCalories(getApplicationContext());
@@ -234,7 +250,7 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
         }
         mTextViewSteps.setText(String.valueOf((int)this.training.getSteps()));
         UnitHelper.FormattedUnitPair distance = UnitHelper.formatKilometers(UnitHelper.metersToKilometers(this.training.getDistance()), this);
-        UnitHelper.FormattedUnitPair calories = UnitHelper.formatCalories(UnitHelper.metersToKilometers(this.training.getCalories()), this);
+        UnitHelper.FormattedUnitPair calories = UnitHelper.formatCalories(this.training.getCalories(), this);
         mTextViewDistance.setText(distance.getValue());
         mTextViewDistanceTitle.setText(distance.getUnit());
         mTextViewCalories.setText(calories.getValue());
@@ -258,11 +274,11 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
         updateData();
         this.training.setEnd(Calendar.getInstance().getTimeInMillis());
         training = TrainingPersistenceHelper.save(this.training, this);
-        if(this.mTimer != null){
-            this.mTimer.cancel();
-            this.mTimer = null;
+        mUiHandler.removeCallbacks(mDurationUpdater);
+        if (receiverRegistered) {
+            LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
+            receiverRegistered = false;
         }
-        LocalBroadcastManager.getInstance(this).unregisterReceiver(broadcastReceiver);
         // broadcast the end of training mode
         Intent localIntent = new Intent(BROADCAST_ACTION_TRAINING_STOPPED);
         // Broadcasts the Intent to receivers in this app.
@@ -270,6 +286,7 @@ public class TrainingActivity extends AppCompatActivity implements View.OnClickL
         StepDetectionServiceHelper.stopAllIfNotRequired(this);
         Intent intent = new Intent(this, TrainingOverviewActivity.class);
         startActivity(intent);
+        finish();
     }
 
 

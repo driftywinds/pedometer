@@ -21,6 +21,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
+import androidx.localbroadcastmanager.content.LocalBroadcastManager;
+
 import org.secuso.privacyfriendlyactivitytracker.models.WalkingMode;
 
 import java.util.List;
@@ -123,7 +125,8 @@ public class WalkingModePersistenceHelper {
             return false;
         }
         item.setIsDeleted(true);
-        return save(item, context).isDeleted();
+        WalkingMode saved = save(item, context);
+        return saved != null && saved.isDeleted();
     }
 
     /**
@@ -134,6 +137,10 @@ public class WalkingModePersistenceHelper {
      * @return true if active mode changed to given one
      */
     public static boolean setActiveMode(WalkingMode mode, Context context) {
+        if (mode == null) {
+            Log.e(LOG_CLASS, "Cannot activate a null walking mode.");
+            return false;
+        }
         Log.i(LOG_CLASS, "Changing active mode to " + mode.getName());
         if (mode.isActive()) {
             // Already active
@@ -142,22 +149,27 @@ public class WalkingModePersistenceHelper {
         }
         WalkingMode currentActiveMode = getActiveMode(context);
 
-        if (currentActiveMode != null) {
+        if (currentActiveMode != null && currentActiveMode.getId() != mode.getId()) {
             currentActiveMode.setIsActive(false);
             save(currentActiveMode, context);
         }
         mode.setIsActive(true);
-        boolean success = save(mode, context).isActive();
-        // broadcast the event
+        WalkingMode savedMode = save(mode, context);
+        boolean success = savedMode != null && savedMode.isActive();
+        // The event is needed by the persistence service (which stores the steps of the old
+        // mode) and by the UI (which has to refresh the walking mode selection).
         Intent localIntent = new Intent(BROADCAST_ACTION_WALKING_MODE_CHANGED);
-        localIntent.setPackage(context.getApplicationContext().getPackageName());
-        localIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
         if (currentActiveMode != null) {
             localIntent.putExtra(BROADCAST_EXTRA_OLD_WALKING_MODE, currentActiveMode.getId());
         }
         localIntent.putExtra(BROADCAST_EXTRA_NEW_WALKING_MODE, mode.getId());
-        // Broadcasts the Intent to receivers in this app.
-        context.sendBroadcast(localIntent);
+        LocalBroadcastManager.getInstance(context.getApplicationContext()).sendBroadcast(localIntent);
+
+        Intent globalIntent = new Intent(BROADCAST_ACTION_WALKING_MODE_CHANGED);
+        globalIntent.setPackage(context.getApplicationContext().getPackageName());
+        globalIntent.addFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
+        globalIntent.putExtras(localIntent);
+        context.sendBroadcast(globalIntent);
         return success;
     }
 
@@ -170,7 +182,22 @@ public class WalkingModePersistenceHelper {
      * @return The walking mode with active-flag set
      */
     public static WalkingMode getActiveMode(Context context) {
-        return new WalkingModeDbHelper(context).getActiveWalkingMode();
+        WalkingModeDbHelper dbHelper = new WalkingModeDbHelper(context);
+        WalkingMode activeMode = dbHelper.getActiveWalkingMode();
+        if (activeMode != null) {
+            return activeMode;
+        }
+        // A walking mode is required for distance and calorie calculation. If the user deleted
+        // or restored all modes, fall back to the first available one instead of crashing or
+        // silently storing steps without a mode.
+        List<WalkingMode> walkingModes = dbHelper.getAllWalkingModes();
+        if (walkingModes.isEmpty()) {
+            return null;
+        }
+        WalkingMode fallback = walkingModes.get(0);
+        fallback.setIsActive(true);
+        WalkingMode saved = save(fallback, context);
+        return saved != null ? saved : fallback;
     }
 
     /**

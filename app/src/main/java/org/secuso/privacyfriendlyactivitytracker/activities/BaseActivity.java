@@ -82,11 +82,19 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
     @Override
     public void onBackPressed() {
         DrawerLayout drawer = findViewById(R.id.drawer_layout);
-        if (drawer.isDrawerOpen(GravityCompat.START)) {
+        if (drawer != null && drawer.isDrawerOpen(GravityCompat.START)) {
             drawer.closeDrawer(GravityCompat.START);
         } else {
             super.onBackPressed();
         }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (mHandler != null) {
+            mHandler.removeCallbacksAndMessages(null);
+        }
+        super.onDestroy();
     }
 
     protected int getNavigationDrawerID() {
@@ -102,6 +110,9 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
 
     protected boolean goToNavigationItem(final int itemId) {
 
+        if (mDrawerLayout == null) {
+            return false;
+        }
         if (itemId == getNavigationDrawerID()) {
             // just close drawer because we are already in this activity
             mDrawerLayout.closeDrawer(GravityCompat.START);
@@ -130,6 +141,9 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
 
     // set active navigation item
     private void selectNavigationItem(int itemId) {
+        if (mNavigationView == null) {
+            return;
+        }
         for (int i = 0; i < mNavigationView.getMenu().size(); i++) {
             boolean b = itemId == mNavigationView.getMenu().getItem(i).getItemId();
             mNavigationView.getMenu().getItem(i).setChecked(b);
@@ -224,17 +238,23 @@ public class BaseActivity extends PermissionRequestActivity implements OnNavigat
         }
 
         mDrawerLayout = findViewById(R.id.drawer_layout);
+        mNavigationView = findViewById(R.id.nav_view);
+        if (mDrawerLayout == null) {
+            // Subclasses without a navigation drawer (e.g. preference screens) do not need one.
+            return;
+        }
         ActionBarDrawerToggle toggle = new ActionBarDrawerToggle(
                 this, mDrawerLayout, toolbar, R.string.navigation_drawer_open, R.string.navigation_drawer_close);
         mDrawerLayout.addDrawerListener(toggle);
         toggle.syncState();
 
-        mNavigationView = findViewById(R.id.nav_view);
-        mNavigationView.setNavigationItemSelectedListener(this);
+        if (mNavigationView != null) {
+            mNavigationView.setNavigationItemSelectedListener(this);
+        }
 
         // The drawer is drawn edge to edge, so the header would otherwise start underneath
         // the status bar and clip the logo.
-        View navHeader = mNavigationView.getHeaderView(0);
+        View navHeader = mNavigationView != null ? mNavigationView.getHeaderView(0) : null;
         if (navHeader != null && navHeader.getLayoutParams() instanceof ViewGroup.MarginLayoutParams) {
             ViewGroup.MarginLayoutParams headerParams =
                     (ViewGroup.MarginLayoutParams) navHeader.getLayoutParams();

@@ -23,6 +23,7 @@ import android.content.Intent;
 import android.preference.PreferenceManager;
 
 import org.secuso.privacyfriendlyactivitytracker.R;
+import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 /**
@@ -40,5 +41,9 @@ public class OnPackageReplacedBroadcastReceiver extends BroadcastReceiver {
 
         // start all services
         StepDetectionServiceHelper.startAllIfEnabled(context);
+        // Alarms are cancelled when the app is updated, so re-arm them.
+        StepDetectionServiceHelper.schedulePersistenceService(context);
+        PeriodicBackupManager.schedule(context);
+        PeriodicBackupManager.runIfDue(context);
     }
 }

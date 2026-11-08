@@ -5,6 +5,7 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
+import android.preference.PreferenceManager;
 import android.util.Log;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -23,6 +24,10 @@ public class PermissionRequestActivity extends AppCompatActivity {
     private static final String[] PERMISSIONS = new String[]{
             Manifest.permission.ACTIVITY_RECOGNITION,
             Manifest.permission.POST_NOTIFICATIONS
+    };
+    private static final String[] LOCATION_PERMISSIONS = new String[]{
+            Manifest.permission.ACCESS_FINE_LOCATION,
+            Manifest.permission.ACCESS_COARSE_LOCATION
     };
 
     int alreadyAskedForActivityRecognition = 0;
@@ -43,14 +48,14 @@ public class PermissionRequestActivity extends AppCompatActivity {
                     Log.d(TAG, "Activity recognition permission was not granted, showing dialog");
                     new MaterialAlertDialogBuilder(this)
                             .setMessage(R.string.dialog_permission_activity_recognition)
-                            .setPositiveButton(android.R.string.ok, (dialog, which) -> multiplePermissionLauncher.launch(PERMISSIONS))
+                            .setPositiveButton(android.R.string.ok, (dialog, which) -> multiplePermissionLauncher.launch(getRequiredPermissions()))
                             .show();
 
                 }
             } else {
                 alreadyAskedForOther++;
                 if (alreadyAskedForOther < 2) {
-                    multiplePermissionLauncher.launch(PERMISSIONS);
+                    multiplePermissionLauncher.launch(getRequiredPermissions());
                 }
             }
         }
@@ -73,13 +78,31 @@ public class PermissionRequestActivity extends AppCompatActivity {
 
     private void askPermissions(ActivityResultLauncher<String[]> multiplePermissionLauncher) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            if (!hasPermissions(PERMISSIONS) && alreadyAskedForOther < 2 && alreadyAskedForActivityRecognition < 2) {
+            String[] requiredPermissions = getRequiredPermissions();
+            if (!hasPermissions(requiredPermissions) && alreadyAskedForOther < 2 && alreadyAskedForActivityRecognition < 2) {
                 Log.d(TAG, "Launching multiple contract permission launcher for ALL required permissions");
-                multiplePermissionLauncher.launch(PERMISSIONS);
+                multiplePermissionLauncher.launch(requiredPermissions);
             } else {
                 Log.d(TAG, "All permissions are already granted");
             }
         }
+    }
+
+    /**
+     * The location permission is only requested when the user enabled the velocity display;
+     * without this the speed service silently never received location updates after a restore
+     * or after the preference was set on another device.
+     */
+    private String[] getRequiredPermissions() {
+        boolean showVelocity = PreferenceManager.getDefaultSharedPreferences(this)
+                .getBoolean(getString(R.string.pref_show_velocity), false);
+        if (!showVelocity) {
+            return PERMISSIONS;
+        }
+        String[] permissions = new String[PERMISSIONS.length + LOCATION_PERMISSIONS.length];
+        System.arraycopy(PERMISSIONS, 0, permissions, 0, PERMISSIONS.length);
+        System.arraycopy(LOCATION_PERMISSIONS, 0, permissions, PERMISSIONS.length, LOCATION_PERMISSIONS.length);
+        return permissions;
     }
 
     public void askPermissions() {

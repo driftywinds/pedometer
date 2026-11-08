@@ -21,7 +21,9 @@ import androidx.test.rule.GrantPermissionRule;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.secuso.privacyfriendlyactivitytracker.R;
+import org.secuso.privacyfriendlyactivitytracker.TestRules;
 import org.secuso.privacyfriendlyactivitytracker.TestUtils;
 import org.secuso.privacyfriendlyactivitytracker.tutorial.TutorialActivity;
 
@@ -33,13 +35,17 @@ import kotlin.jvm.JvmField;
 public class PreferencesActivityTest {
 
     @Rule
-    public GrantPermissionRule activityRecognitionPermission = (android.os.Build.VERSION.SDK_INT >= 29 ? GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION) : null);
+    public TestRule activityRecognitionPermission =
+            TestRules.grantFromSdk(29, Manifest.permission.ACTIVITY_RECOGNITION);
     @Rule
-    public GrantPermissionRule writeExternalPermission = (android.os.Build.VERSION.SDK_INT < 19 ? GrantPermissionRule.grant(Manifest.permission.WRITE_EXTERNAL_STORAGE) : null);
+    public TestRule writeExternalPermission =
+            TestRules.grantBelowSdk(19, Manifest.permission.WRITE_EXTERNAL_STORAGE);
     @Rule
-    public GrantPermissionRule foregroundServicePermission = (android.os.Build.VERSION.SDK_INT >= 34 ? GrantPermissionRule.grant(Manifest.permission.FOREGROUND_SERVICE_HEALTH) : null);
+    public TestRule foregroundServicePermission =
+            TestRules.grantFromSdk(34, Manifest.permission.FOREGROUND_SERVICE_HEALTH);
     @Rule
-    public GrantPermissionRule postNotificatuionsPermission = (android.os.Build.VERSION.SDK_INT >= 32 ? GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS) : null);
+    public TestRule postNotificatuionsPermission =
+            TestRules.grantFromSdk(33, Manifest.permission.POST_NOTIFICATIONS);
 
 
     @Rule

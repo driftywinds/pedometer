@@ -40,10 +40,19 @@ public class StepCount {
     private static double METRIC_AVG_FACTOR = (METRIC_RUNNING_FACTOR + METRIC_WALKING_FACTOR) / 2;
 
 
+    private long id;
     private int stepCount;
     private long startTime;
     private long endTime;
     private WalkingMode walkingMode;
+
+    public long getId() {
+        return id;
+    }
+
+    public void setId(long id) {
+        this.id = id;
+    }
 
     public int getStepCount() {
         return stepCount;
@@ -92,17 +101,42 @@ public class StepCount {
 
     /**
      * Gets the calories
-     * @return the calories in cal
+     * @return the calories in kcal
      */
     public double getCalories(Context context){
         // inspired by https://github.com/bagilevi/android-pedometer/blob/master/src/name/bagi/levente/pedometer/CaloriesNotifier.java
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        float bodyWeight = Float.parseFloat(sharedPref.getString(context.getString(R.string.pref_weight),context.getString(R.string.pref_default_weight)));
-        return bodyWeight * METRIC_AVG_FACTOR * UnitHelper.metersToKilometers(getDistance());
+        return getCaloriesFactor(context) * UnitHelper.metersToKilometers(getDistance());
     }
+
+    /**
+     * The calorie factor (body weight times the walking/running factor) for the current user.
+     * Exposed so that the factor can be read once and reused for many entries.
+     *
+     * @return the factor which turns the distance in kilometers into kcal
+     */
+    public static double getCaloriesFactor(Context context) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+        String weight = sharedPref.getString(context.getString(R.string.pref_weight), context.getString(R.string.pref_default_weight));
+        try {
+            return Float.parseFloat(weight) * METRIC_AVG_FACTOR;
+        } catch (NumberFormatException e) {
+            return Float.parseFloat(context.getString(R.string.pref_default_weight)) * METRIC_AVG_FACTOR;
+        }
+    }
+
+    /**
+     * Gets the calories with a calorie factor which was read once via {@link #getCaloriesFactor(Context)}.
+     *
+     * @param caloriesFactor the factor returned by {@link #getCaloriesFactor(Context)}
+     * @return the calories in kcal
+     */
+    public double getCalories(double caloriesFactor) {
+        return caloriesFactor * UnitHelper.metersToKilometers(getDistance());
+    }
+
     @Override
     public String toString() {
-        SimpleDateFormat format = new SimpleDateFormat("dd.MM.yyy HH:mm:ss");
+        SimpleDateFormat format = new SimpleDateFormat("dd.MM.yyyy HH:mm:ss");
         return "StepCount{" + format.format(new Date(startTime)) +
                 " - " + format.format(new Date(endTime)) +
                 ": " + stepCount + " @ " + ((walkingMode == null) ? -1 : walkingMode.getId())+

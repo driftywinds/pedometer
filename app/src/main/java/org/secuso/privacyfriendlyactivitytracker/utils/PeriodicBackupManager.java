@@ -292,10 +292,27 @@ public final class PeriodicBackupManager {
     }
 
     /**
-     * Runs a backup when one is due. Called when the app starts, from the alarm receiver and from
-     * the settings screen.
+     * Runs a backup when one is due. Called when the app starts or from the settings screen.
+     * The work is done on a background thread and the method returns immediately.
      */
     public static void runIfDue(final Context context) {
+        if (!isDue(context)) {
+            return;
+        }
+        final Context appContext = context.getApplicationContext();
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                runIfDueBlocking(appContext);
+            }
+        }, "pedometer-periodic-backup").start();
+    }
+
+    /**
+     * Runs a backup when one is due on the calling thread. Used by the alarm receiver, which
+     * keeps the process alive while this method runs.
+     */
+    public static void runIfDueBlocking(final Context context) {
         if (!isSupported() || !isEnabled(context)) {
             return;
         }
@@ -313,21 +330,28 @@ public final class PeriodicBackupManager {
             return;
         }
         final Context appContext = context.getApplicationContext();
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    boolean success = performBackup(appContext);
-                    setNextDue(appContext, nextDueAfter(due, System.currentTimeMillis(), getInterval(appContext)));
-                    if (success) {
-                        setLastRun(appContext, System.currentTimeMillis());
-                    }
-                } finally {
-                    RUNNING.set(false);
-                    schedule(appContext);
-                }
+        try {
+            boolean success = performBackup(appContext);
+            setNextDue(appContext, nextDueAfter(due, System.currentTimeMillis(), getInterval(appContext)));
+            if (success) {
+                setLastRun(appContext, System.currentTimeMillis());
             }
-        }, "pedometer-periodic-backup").start();
+        } finally {
+            RUNNING.set(false);
+            schedule(appContext);
+        }
+    }
+
+    private static boolean isDue(final Context context) {
+        if (!isSupported() || !isEnabled(context)) {
+            return false;
+        }
+        long due = getNextDue(context);
+        if (due <= 0) {
+            schedule(context);
+            return false;
+        }
+        return due <= System.currentTimeMillis();
     }
 
     @SuppressLint("NewApi")

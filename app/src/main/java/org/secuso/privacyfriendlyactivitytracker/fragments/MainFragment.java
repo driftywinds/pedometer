@@ -74,7 +74,6 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
             //actionBar.setSubtitle(R.string.action_main);
             actionBar.setDisplayHomeAsUpEnabled(true);
         }
-        container.removeAllViews();
 
         ViewPager viewPager = view.findViewById(R.id.pager);
         setupViewPager(viewPager);
@@ -89,20 +88,25 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
 
     @Override
     public void onDetach(){
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplicationContext());
-        sharedPref.unregisterOnSharedPreferenceChangeListener(this);
-        StepDetectionServiceHelper.stopAllIfNotRequired(getActivity().getApplicationContext());
+        Activity activity = getActivity();
+        if (activity != null) {
+            SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(activity.getApplicationContext());
+            sharedPref.unregisterOnSharedPreferenceChangeListener(this);
+            StepDetectionServiceHelper.stopAllIfNotRequired(activity.getApplicationContext());
+        }
         super.onDetach();
     }
 
     @Override
     public void onPause(){
-        StepDetectionServiceHelper.stopAllIfNotRequired(getActivity().getApplicationContext());
+        Activity activity = getActivity();
+        if (activity != null) {
+            StepDetectionServiceHelper.stopAllIfNotRequired(activity.getApplicationContext());
+        }
         super.onPause();
     }
 
     private void setupViewPager(ViewPager viewPager) {
-        new ViewPagerAdapter(null);
         ViewPagerAdapter adapter = new ViewPagerAdapter(getChildFragmentManager());
         adapter.addFragment(DailyReportFragment.newInstance(), getString(R.string.day));
         adapter.addFragment(WeeklyReportFragment.newInstance(), getString(R.string.week));
@@ -113,8 +117,10 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
     @Override
     public void onResume() {
         super.onResume();
-
-        ((MainActivity)requireActivity()).askPermissions();
+        Activity activity = getActivity();
+        if (activity instanceof PermissionRequestActivity) {
+            ((PermissionRequestActivity) activity).askPermissions();
+        }
     }
 
     @Override
@@ -175,8 +181,10 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
 
     @Override
     public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-        if(key.equals(getString(R.string.pref_step_counter_enabled)) || key.equals(getString(R.string.pref_use_step_hardware))){
-            this.getActivity().invalidateOptionsMenu();
+        if (key.equals(getString(R.string.pref_step_counter_enabled)) || key.equals(getString(R.string.pref_use_step_hardware))) {
+            if (getActivity() != null) {
+                getActivity().invalidateOptionsMenu();
+            }
         }
     }
 
@@ -211,8 +219,10 @@ public class MainFragment extends Fragment implements SharedPreferences.OnShared
 
     @Override
     public void onAttach(@NonNull Activity activity) {
-        ((MainActivity)requireActivity()).askPermissions();
-        StepDetectionServiceHelper.startAllIfEnabled(true, getActivity().getApplicationContext());
         super.onAttach(activity);
+        if (activity instanceof PermissionRequestActivity) {
+            ((PermissionRequestActivity) activity).askPermissions();
+        }
+        StepDetectionServiceHelper.startAllIfEnabled(true, activity.getApplicationContext());
     }
 }

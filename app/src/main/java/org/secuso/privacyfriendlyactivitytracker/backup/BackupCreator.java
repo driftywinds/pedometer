@@ -18,51 +18,36 @@ import org.secuso.privacyfriendlybackup.api.backup.DatabaseUtil;
 import org.secuso.privacyfriendlybackup.api.backup.PreferenceUtil;
 import org.secuso.privacyfriendlybackup.api.pfa.IBackupCreator;
 
+import java.io.IOException;
 import java.io.OutputStream;
 import java.io.OutputStreamWriter;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 
 
 public class BackupCreator implements IBackupCreator {
+    private static final String TAG = "PFA BackupCreator";
 
     @Override
     public boolean writeBackup(@NonNull Context context, @NonNull OutputStream outputStream) {
-        // lock application, so no changes can be made as long as this backup is created
-        // depending on the size of the application - this could take a bit
-        ((PFAPedometerApplication) context.getApplicationContext()).lock();
+        PFAPedometerApplication application =
+                (PFAPedometerApplication) context.getApplicationContext();
+        // Lock the application, so no changes can be made as long as this backup is created.
+        // Depending on the size of the application this could take a bit.
+        application.lock();
 
-        Log.d("PFA BackupCreator", "createBackup() started");
-        OutputStreamWriter outputStreamWriter = new OutputStreamWriter(outputStream, Charset.forName("UTF-8"));
-        JsonWriter writer = new JsonWriter(outputStreamWriter);
+        Log.d(TAG, "createBackup() started");
+        JsonWriter writer = new JsonWriter(
+                new OutputStreamWriter(outputStream, StandardCharsets.UTF_8));
         writer.setIndent("");
 
         try {
             writer.beginObject();
 
-            SupportSQLiteDatabase dataBase1 = DatabaseUtil.getSupportSQLiteOpenHelper(context, StepCountDbHelper.DATABASE_NAME).getReadableDatabase();
+            writeDatabase(writer, context, "database_stepCount", StepCountDbHelper.DATABASE_NAME);
+            writeDatabase(writer, context, "database_trainings", TrainingDbHelper.DATABASE_NAME);
+            writeDatabase(writer, context, "database_walkingMode", WalkingModeDbHelper.DATABASE_NAME);
 
-            Log.d("PFA BackupCreator", "Writing StepCount database");
-            writer.name("database_stepCount");
-            DatabaseUtil.writeDatabase(writer, dataBase1);
-            dataBase1.close();
-
-
-            SupportSQLiteDatabase dataBase2 = DatabaseUtil.getSupportSQLiteOpenHelper(context, TrainingDbHelper.DATABASE_NAME).getReadableDatabase();
-
-            Log.d("PFA BackupCreator", "Writing Training database");
-            writer.name("database_trainings");
-            DatabaseUtil.writeDatabase(writer, dataBase2);
-            dataBase2.close();
-
-            SupportSQLiteDatabase dataBase3 = DatabaseUtil.getSupportSQLiteOpenHelper(context, WalkingModeDbHelper.DATABASE_NAME).getReadableDatabase();
-
-            Log.d("PFA BackupCreator", "Writing WalkingMode database");
-            writer.name("database_walkingMode");
-            DatabaseUtil.writeDatabase(writer, dataBase3);
-            dataBase3.close();
-
-
-            Log.d("PFA BackupCreator", "Writing preferences");
+            Log.d(TAG, "Writing preferences");
             writer.name("preferences");
             SharedPreferences pref = PreferenceManager.getDefaultSharedPreferences(context);
             PreferenceUtil.writePreferences(writer, pref);
@@ -72,18 +57,35 @@ public class BackupCreator implements IBackupCreator {
             PreferenceUtil.writePreferences(writer, pref);
 
             writer.endObject();
-            writer.close();
+            writer.flush();
 
-            Log.d("PFA BackupCreator", "Backup created successfully");
-
-            ((PFAPedometerApplication) context.getApplicationContext()).release();
+            Log.d(TAG, "Backup created successfully");
             return true;
         } catch (Exception e) {
-            Log.e("PFA BackupCreator", "Error occurred", e);
-            e.printStackTrace();
-
-            ((PFAPedometerApplication) context.getApplicationContext()).release();
+            Log.e(TAG, "Error while writing the backup.", e);
             return false;
+        } finally {
+            try {
+                writer.close();
+            } catch (IOException e) {
+                Log.w(TAG, "Could not close the backup writer.", e);
+            }
+            application.release();
+        }
+    }
+
+    private void writeDatabase(@NonNull JsonWriter writer, @NonNull Context context,
+                               @NonNull String jsonName, @NonNull String databaseName)
+            throws IOException {
+        writer.name(jsonName);
+        Log.d(TAG, "Writing " + databaseName);
+        SupportSQLiteDatabase database = DatabaseUtil
+                .getSupportSQLiteOpenHelper(context, databaseName)
+                .getReadableDatabase();
+        try {
+            DatabaseUtil.writeDatabase(writer, database);
+        } finally {
+            database.close();
         }
     }
 }

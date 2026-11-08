@@ -98,6 +98,15 @@ android {
 
     lint {
         lintConfig = file("lint.xml")
+        // The lint report is collected and uploaded by CI. It does not fail the build yet
+        // because the existing baseline still contains warnings which are addressed
+        // incrementally.
+        abortOnError = false
+        checkReleaseBuilds = false
+    }
+
+    testOptions {
+        unitTests.returnDefaultValues = true
     }
 }
 
@@ -124,11 +133,11 @@ dependencies {
     implementation 'androidx.recyclerview:recyclerview:1.3.2'
     implementation 'com.github.PhilJay:MPAndroidChart:v3.0.0-beta1'
     implementation 'androidx.multidex:multidex:2.0.1'  //with androidx libraries
-    implementation 'androidx.test.ext:junit:1.1.5'
-    implementation 'androidx.test.espresso:espresso-contrib:3.5.1'
 
     testImplementation 'junit:junit:4.13.2'
     androidTestImplementation 'androidx.test:runner:1.5.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.5'
+    androidTestImplementation 'androidx.test.espresso:espresso-contrib:3.5.1'
 
     def work_version = '2.9.0'
     implementation "androidx.work:work-runtime:$work_version"

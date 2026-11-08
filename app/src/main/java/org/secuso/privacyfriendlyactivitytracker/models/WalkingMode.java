@@ -42,8 +42,8 @@ public class WalkingMode {
         alarmItem.setName(c.getString(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_NAME)));
         alarmItem.setStepLength(c.getDouble(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_STEP_SIZE)));
         alarmItem.setStepFrequency(c.getDouble(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_STEP_FREQUENCY)));
-        alarmItem.setIsActive(Boolean.valueOf(c.getString(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_ACTIVE))));
-        alarmItem.setIsDeleted(Boolean.valueOf(c.getString(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_DELETED))));
+        alarmItem.setIsActive(c.getInt(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_ACTIVE)) != 0);
+        alarmItem.setIsDeleted(c.getInt(c.getColumnIndexOrThrow(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_DELETED)) != 0);
         return alarmItem;
     }
 
@@ -100,9 +100,30 @@ public class WalkingMode {
         values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_NAME, this.getName());
         values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_STEP_SIZE, this.getStepLength());
         values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_STEP_FREQUENCY, this.getStepFrequency());
-        values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_ACTIVE, String.valueOf(this.isActive()));
-        values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_DELETED, String.valueOf(this.isDeleted()));
+        values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_ACTIVE, this.isActive() ? 1 : 0);
+        values.put(WalkingModeDbHelper.WalkingModeEntry.KEY_IS_DELETED, this.isDeleted() ? 1 : 0);
         return values;
+    }
+
+    /**
+     * Walking modes are identified by their database id. A mode without an id (not stored yet)
+     * is only equal to itself.
+     */
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) {
+            return true;
+        }
+        if (!(o instanceof WalkingMode)) {
+            return false;
+        }
+        WalkingMode other = (WalkingMode) o;
+        return this.id > 0 && this.id == other.id;
+    }
+
+    @Override
+    public int hashCode() {
+        return this.id > 0 ? Long.valueOf(this.id).hashCode() : System.identityHashCode(this);
     }
 
     @Override

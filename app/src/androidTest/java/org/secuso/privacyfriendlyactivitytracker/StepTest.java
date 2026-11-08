@@ -39,22 +39,25 @@ import static org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPer
 
 import android.Manifest;
 import android.content.Context;
+import android.content.Intent;
 import android.content.ServiceConnection;
 import android.content.SharedPreferences;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorManager;
+import android.os.IBinder;
 import android.preference.PreferenceManager;
 
 import androidx.test.espresso.action.ViewActions;
 import androidx.test.ext.junit.rules.ActivityScenarioRule;
-import androidx.test.rule.GrantPermissionRule;
+import androidx.test.rule.ServiceTestRule;
 
 import org.junit.After;
 import org.junit.Before;
 import org.junit.FixMethodOrder;
 import org.junit.Rule;
 import org.junit.Test;
+import org.junit.rules.TestRule;
 import org.junit.runners.MethodSorters;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
 import org.secuso.privacyfriendlyactivitytracker.persistence.WalkingModePersistenceHelper;
@@ -66,6 +69,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.util.Calendar;
 import java.util.Objects;
+import java.util.concurrent.TimeoutException;
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 public class StepTest {
@@ -74,13 +78,19 @@ public class StepTest {
     public ActivityScenarioRule<TutorialActivity> activityRule =
             new ActivityScenarioRule<>(TutorialActivity.class);
     @Rule
-    public GrantPermissionRule activityRecognitionPermission = (android.os.Build.VERSION.SDK_INT >= 29 ? GrantPermissionRule.grant(Manifest.permission.ACTIVITY_RECOGNITION) : null);
+    public ServiceTestRule serviceRule = new ServiceTestRule();
     @Rule
-    public GrantPermissionRule writeExternalPermission = (android.os.Build.VERSION.SDK_INT < 19 ? GrantPermissionRule.grant(Manifest.permission.WRITE_EXTERNAL_STORAGE) : null);
+    public TestRule activityRecognitionPermission =
+            TestRules.grantFromSdk(29, Manifest.permission.ACTIVITY_RECOGNITION);
     @Rule
-    public GrantPermissionRule foregroundServicePermission = (android.os.Build.VERSION.SDK_INT >= 34 ? GrantPermissionRule.grant(Manifest.permission.FOREGROUND_SERVICE_HEALTH) : null);
+    public TestRule writeExternalPermission =
+            TestRules.grantBelowSdk(19, Manifest.permission.WRITE_EXTERNAL_STORAGE);
     @Rule
-    public GrantPermissionRule postNotificatuionsPermission = (android.os.Build.VERSION.SDK_INT >= 32 ? GrantPermissionRule.grant(Manifest.permission.POST_NOTIFICATIONS) : null);
+    public TestRule foregroundServicePermission =
+            TestRules.grantFromSdk(34, Manifest.permission.FOREGROUND_SERVICE_HEALTH);
+    @Rule
+    public TestRule postNotificatuionsPermission =
+            TestRules.grantFromSdk(33, Manifest.permission.POST_NOTIFICATIONS);
 
     AccelerometerStepDetectorService sensorService;
     Context context = getApplicationContext();
@@ -89,15 +99,19 @@ public class StepTest {
     SensorManager sensorManager;
     SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
     String updateIntervalBackup; // back this up, in case this is accidentally run on a physical device
-    private ServiceConnection mServiceConnection;
 
     @Before
-    public void setup() throws InvocationTargetException, NoSuchMethodException, IllegalAccessException, InstantiationException {
-        sharedPref.edit().putBoolean(getResourceString(R.string.pref_step_counter_enabled), true).apply();
-        sensorService = AccelerometerStepDetectorService.accelerometerStepDetectorService;
-        assumeNotNull(sensorService);
-        myBinder = (AbstractStepDetectorService.StepDetectorBinder) sensorService.getmStepDetectorBinder();
-        assumeNotNull(myBinder);
+    public void setup() throws InvocationTargetException, NoSuchMethodException, IllegalAccessException, InstantiationException, TimeoutException {
+        sharedPref.edit()
+                .putBoolean(getResourceString(R.string.pref_step_counter_enabled), true)
+                .putBoolean(getResourceString(R.string.pref_use_step_hardware), false)
+                .apply();
+        // Bind to the accelerometer service directly. The production code no longer exposes a
+        // static service instance; the test owns the service lifecycle.
+        Intent serviceIntent = new Intent(context, AccelerometerStepDetectorService.class);
+        IBinder binder = serviceRule.bindService(serviceIntent);
+        myBinder = (AbstractStepDetectorService.StepDetectorBinder) binder;
+        sensorService = (AccelerometerStepDetectorService) myBinder.getService();
         sensorEvent = getEvent();
         sensorManager = (SensorManager) context.getSystemService(SENSOR_SERVICE);
         sensorEvent.sensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);

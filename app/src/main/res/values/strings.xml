@@ -131,6 +131,8 @@
     </string-array>
     <string name="unit_of_length_km">1|km|kilometers|km/h|1000|m</string><!-- 1km = 1km -->
     <string name="unit_of_length_mi">0.621371|mi|miles|mph|5280|ft</string><!-- 1km = 0.621371 miles -->
+    <string name="unit_meters">meters</string>
+    <string name="widget_value_placeholder" translatable="false">0</string>
     <string name="pref_unit_of_energy" translatable="false">org.secuso.privacyfriendlyactivitytracker.pref.unit_of_energy</string>
     <string name="pref_title_unit_of_energy">Unit of energy</string>
     <string-array name="pref_keys_unit_of_energy">
@@ -332,6 +334,7 @@
     <string name="step_length">Step length:</string>
     <string name="walking_mode_active_ext"> (active)</string>
     <string name="walking_mode_input_empty">Name and step length are required. Please fill in!</string>
+    <string name="walking_mode_input_invalid_step_length">Please enter a step length between 0.1 and 2.5 meters.</string>
     <string name="hint_walking_mode_name">Name</string>
     <string name="hint_walking_mode_step_length">Step length (Meters)</string>
     <string-array name="pref_default_walking_mode_names">

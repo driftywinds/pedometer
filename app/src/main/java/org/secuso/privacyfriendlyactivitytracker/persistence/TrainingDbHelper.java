@@ -42,6 +42,8 @@ public class TrainingDbHelper extends SQLiteOpenHelper {
 
     public static final String DATABASE_NAME = "TrainingSessions.db";
 
+    // Keep the historic table name so that backups written by older versions can still be
+    // imported (the backup format stores rows, not the schema).
     public static final String TABLE_NAME = "walkingmodes";
 
     public static final String KEY_ID = "_id";
@@ -77,19 +79,26 @@ public class TrainingDbHelper extends SQLiteOpenHelper {
      * @param instance Instance of stepCountDbHelper to fetch new db-instance if necessary
      * @return static database instance
      */
-    private static SQLiteDatabase getDatabase(TrainingDbHelper instance){
-        if(db == null){
+    private static synchronized SQLiteDatabase getDatabase(TrainingDbHelper instance){
+        if(db == null || !db.isOpen()){
             db = instance.getWritableDatabase();
         }
         return db;
     }
 
-    public static void invalidateReference(){
-        db = null;
+    public static synchronized void invalidateReference(){
+        if (db != null) {
+            try {
+                db.close();
+            } catch (RuntimeException ignored) {
+                // Already closed.
+            }
+            db = null;
+        }
     }
 
     public TrainingDbHelper(Context context) {
-        super(context, DATABASE_NAME, null, DATABASE_VERSION);
+        super(context.getApplicationContext(), DATABASE_NAME, null, DATABASE_VERSION);
     }
     public void onCreate(SQLiteDatabase db) {
         db.execSQL(SQL_CREATE_ENTRIES);
@@ -109,21 +118,6 @@ public class TrainingDbHelper extends SQLiteOpenHelper {
      */
     protected long addTraining(Training item) {
         ContentValues values = item.toContentValues();
-        return getDatabase(this).insert(
-                TABLE_NAME,
-                null,
-                values);
-    }
-
-    /**
-     * Inserts the given training session as new entry keeping the original id
-     *
-     * @param item    The training session which should be stored
-     * @return the inserted id
-     */
-    protected long addTrainingWithID(Training item) {
-        ContentValues values = item.toContentValues();
-        values.put(KEY_ID, item.getId());
         return getDatabase(this).insert(
                 TABLE_NAME,
                 null,

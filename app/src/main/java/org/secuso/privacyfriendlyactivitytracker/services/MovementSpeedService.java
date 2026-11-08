@@ -22,6 +22,7 @@ import android.app.Notification;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.app.PendingIntent;
+import android.app.Service;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
@@ -38,11 +39,8 @@ import android.util.Log;
 
 import androidx.annotation.NonNull;
 import androidx.core.app.ActivityCompat;
-import androidx.core.app.JobIntentService;
 import androidx.core.app.NotificationCompat;
 import androidx.localbroadcastmanager.content.LocalBroadcastManager;
-
-import org.jetbrains.annotations.NotNull;
 import org.secuso.privacyfriendlyactivitytracker.R;
 import org.secuso.privacyfriendlyactivitytracker.activities.MainActivity;
 import org.secuso.privacyfriendlyactivitytracker.utils.UnitHelper;
@@ -55,7 +53,7 @@ import static org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDet
  * @version 20160810
  */
 
-public class MovementSpeedService extends JobIntentService implements LocationListener, SharedPreferences.OnSharedPreferenceChangeListener {
+public class MovementSpeedService extends Service implements LocationListener, SharedPreferences.OnSharedPreferenceChangeListener {
 
     /**
      * Broadcast action identifier for messages broadcasted when new speed is detected
@@ -109,10 +107,16 @@ public class MovementSpeedService extends JobIntentService implements LocationLi
 
     @Override
     public void onCreate() {
-        createNotificationChannel();
-        startForeground(MOVEMENT_NOTIFICATION_ID, buildNotification());
         super.onCreate();
+        createNotificationChannel();
         mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        try {
+            startForeground(MOVEMENT_NOTIFICATION_ID, buildNotification());
+        } catch (RuntimeException e) {
+            // Missing notification or foreground service permission on newer Android versions.
+            Log.e(LOG_TAG, "Could not start the foreground notification for the speed service.", e);
+            stopSelf();
+        }
     }
 
     private Notification buildNotification(){
@@ -129,9 +133,12 @@ public class MovementSpeedService extends JobIntentService implements LocationLi
         } else {
             mBuilder = new NotificationCompat.Builder(this);
         }
-                mBuilder.setSmallIcon(R.drawable.ic_stat_directions_walk);
+        mBuilder.setSmallIcon(R.drawable.ic_stat_directions_walk);
         if (speed !=null){
             mBuilder.setContentTitle(UnitHelper.formatKilometersPerHour(UnitHelper.metersPerSecondToKilometersPerHour(speed),getApplicationContext()));
+        } else {
+            mBuilder.setContentTitle(getString(R.string.app_name));
+            mBuilder.setContentText(getString(R.string.app_name_long));
         }
         mBuilder.setSilent(true);
         mBuilder.setContentIntent(pIntent);
@@ -143,23 +150,34 @@ public class MovementSpeedService extends JobIntentService implements LocationLi
     @Override
     public void onDestroy() {
         Log.i(LOG_TAG, "Destroying MovementSpeedService.");
-        this.mLocationManager.removeUpdates(this);
+        if (mLocationManager != null) {
+            try {
+                this.mLocationManager.removeUpdates(this);
+            } catch (RuntimeException e) {
+                Log.w(LOG_TAG, "Could not remove the location updates.", e);
+            }
+        }
         super.onDestroy();
-    }
-
-    @Override
-    protected void onHandleWork(@NonNull @NotNull Intent intent) {
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
         Log.i(LOG_TAG, "Starting MovementSpeedService.");
-        String providerName = getProviderName();
+        if (mLocationManager == null) {
+            mLocationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+        }
+        String providerName = mLocationManager != null ? getProviderName() : null;
         Log.i(LOG_TAG, "Using " + providerName + " as location provider");
         if ((ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
                 ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED) &&
                 providerName != null) {
-            mLocationManager.requestLocationUpdates(providerName, 0, 0, this);
+            try {
+                mLocationManager.requestLocationUpdates(providerName, 0, 0, this);
+            } catch (RuntimeException e) {
+                Log.e(LOG_TAG, "Could not request location updates.", e);
+            }
+        } else {
+            Log.w(LOG_TAG, "No location permission or provider - speed will not be calculated.");
         }
         return START_STICKY;
     }
@@ -199,15 +217,19 @@ public class MovementSpeedService extends JobIntentService implements LocationLi
         if(location.hasSpeed()){
             Log.i(LOG_TAG, "Location has speed");
             speed = location.getSpeed();
-        } else {
+        } else if (curTime > 0) {
             Log.i(LOG_TAG, "Location has no speed");
             double distance = calculationBydistance(newLat,newLon,oldLat,oldLon);
             double timeDifferent = (newTime - curTime) / 1000; // seconds
-            speed = (float) (distance / timeDifferent);
-            curTime = newTime;
-            oldLat = newLat;
-            oldLon = newLon;
+            if (timeDifferent > 0) {
+                speed = (float) (distance / timeDifferent);
+            }
         }
+        // Always remember the current position/time so that the next fix can be used even when
+        // this one did not provide a speed.
+        curTime = newTime;
+        oldLat = newLat;
+        oldLon = newLon;
 
         Intent localIntent = new Intent(BROADCAST_ACTION_SPEED_CHANGED)
                 // Add new step count
@@ -243,7 +265,7 @@ public class MovementSpeedService extends JobIntentService implements LocationLi
      * @version 20170530
      */
     public class MovementSpeedBinder extends Binder {
-        public Float getSpeed() { return MovementSpeedService.this.speed; } // TODO
+        public Float getSpeed() { return MovementSpeedService.this.speed; }
         public MovementSpeedService getService() {
             return MovementSpeedService.this;
         }

@@ -76,8 +76,9 @@ public class TutorialActivity extends PermissionRequestActivity {
             SharedPreferences.Editor editor = sharedPref.edit();
             editor.putStringSet(this.getString(R.string.pref_notification_motivation_alert_texts), new HashSet<>(Arrays.asList(getResources().getStringArray(R.array.pref_default_notification_motivation_alert_messages))));
             editor.apply();
-
-            editor.putLong(this.getString(R.string.pref_notification_motivation_alert_time), 64800000).apply();
+            // The motivation alert time is intentionally not written here: the default is
+            // resolved in local time by StepDetectionServiceHelper and writing an absolute
+            // timestamp would shift it with the timezone.
         }
 
 

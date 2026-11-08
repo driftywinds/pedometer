@@ -169,10 +169,18 @@ public class WalkingModesActivity extends AppCompatActivity implements WalkingMo
         alertDialog.getButton(DialogInterface.BUTTON_POSITIVE).setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                String name = edittext.getText().toString();
-                Double stepLength = Double.valueOf(stepLengthText.getText().toString());
-                if (name.trim().isEmpty() || stepLength <= 0) {
-                    Toast.makeText(WalkingModesActivity.this, getString(R.string.walking_mode_input_empty), Toast.LENGTH_SHORT).show();
+                String name = edittext.getText().toString().trim();
+                double stepLength;
+                try {
+                    stepLength = Double.parseDouble(stepLengthText.getText().toString().trim().replace(',', '.'));
+                } catch (NumberFormatException e) {
+                    Toast.makeText(WalkingModesActivity.this, getString(R.string.walking_mode_input_invalid_step_length), Toast.LENGTH_SHORT).show();
+                    return;
+                }
+                // 0.1 m - 2.5 m are sane values for the length of a single step. Rejecting
+                // garbage here also protects the distance and calorie calculation.
+                if (name.isEmpty() || stepLength < 0.1 || stepLength > 2.5) {
+                    Toast.makeText(WalkingModesActivity.this, getString(R.string.walking_mode_input_invalid_step_length), Toast.LENGTH_SHORT).show();
                     return;
                 }
                 WalkingMode walkingMode;
@@ -183,9 +191,13 @@ public class WalkingModesActivity extends AppCompatActivity implements WalkingMo
                 }
                 walkingMode.setName(name);
                 walkingMode.setStepLength(stepLength);
-                walkingMode = WalkingModePersistenceHelper.save(walkingMode, getApplicationContext());
+                WalkingMode savedMode = WalkingModePersistenceHelper.save(walkingMode, getApplicationContext());
+                if (savedMode == null) {
+                    Toast.makeText(WalkingModesActivity.this, R.string.operation_failed, Toast.LENGTH_SHORT).show();
+                    return;
+                }
                 if (position == null) {
-                    walkingModes.add(walkingMode);
+                    walkingModes.add(savedMode);
                     mAdapter.setItems(walkingModes);
                     mAdapter.notifyItemInserted(walkingModes.size() - 1);
                 } else {

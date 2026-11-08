@@ -34,6 +34,9 @@ public class OnShutdownBroadcastReceiver extends BroadcastReceiver {
     @Override
     public void onReceive(Context context, Intent intent) {
         Log.i(LOG_CLASS, "onReceive");
-        StepDetectionServiceHelper.startPersistenceService(context);
+        // Best effort: ask the running step detector to persist the current step count. The
+        // system may kill the process shortly after this broadcast, but the step count is
+        // persisted every 30 minutes anyway.
+        StepDetectionServiceHelper.saveStepsNow(context.getApplicationContext(), -1);
     }
 }

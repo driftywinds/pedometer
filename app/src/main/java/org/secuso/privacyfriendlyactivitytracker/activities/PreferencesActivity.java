@@ -56,18 +56,18 @@ import org.secuso.privacyfriendlyactivitytracker.backup.BackupCreator;
 import org.secuso.privacyfriendlyactivitytracker.backup.BackupRestorer;
 import org.secuso.privacyfriendlyactivitytracker.models.StepCount;
 import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenceHelper;
-import org.secuso.privacyfriendlyactivitytracker.receivers.StepCountPersistenceReceiver;
 import org.secuso.privacyfriendlyactivitytracker.receivers.WidgetReceiver;
 import org.secuso.privacyfriendlyactivitytracker.utils.AndroidVersionHelper;
 import org.secuso.privacyfriendlyactivitytracker.utils.PeriodicBackupManager;
 import org.secuso.privacyfriendlyactivitytracker.utils.StepDetectionServiceHelper;
 
 import java.io.File;
-import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.io.OutputStreamWriter;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
@@ -241,15 +241,17 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
     @Override
     public void onActivityResult(int requestCode, int resultCode, Intent resultData) {
         if (requestCode == CREATE_FILE && resultCode == Activity.RESULT_OK) {
-            if (resultData != null) {
+            if (resultData != null && generalPreferenceFragment != null) {
                 Uri uri = resultData.getData();
                 try (OutputStream out = getContentResolver().openOutputStream(uri)) {
+                    String displayName = generalPreferenceFragment.getDocumentUriDisplayName(uri);
                     GeneralPreferenceFragment.writeStepsToCSVOutputStream(generalPreferenceFragment, out,
-                            StepCountPersistenceHelper.getStepCountsForever(getApplicationContext()), generalPreferenceFragment.getDocumentUriDisplayName(uri));
-                } catch (FileNotFoundException e) {
-                    throw new RuntimeException(e);
-                } catch (IOException e) {
-                    throw new RuntimeException(e);
+                            StepCountPersistenceHelper.getStepCountsForever(getApplicationContext()), displayName);
+                    Toast.makeText(this, getString(R.string.export_csv_success) + " " + displayName,
+                            Toast.LENGTH_SHORT).show();
+                } catch (IOException | RuntimeException e) {
+                    Log.e(LOG_TAG, "Could not export the step count as CSV.", e);
+                    Toast.makeText(this, R.string.export_csv_error, Toast.LENGTH_SHORT).show();
                 }
             }
         }
@@ -465,14 +467,20 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
             sharedPref.registerOnSharedPreferenceChangeListener(this);
 
             //correctly set background counting enabled or not
-            findPreference(getString(R.string.pref_hw_background_counter_frequency)).setEnabled(sharedPref.getBoolean(getString(R.string.pref_use_step_hardware), true));
-            findPreference(getString(R.string.pref_which_step_hardware)).setEnabled(sharedPref.getBoolean(getString(R.string.pref_use_step_hardware), true));
+            Preference backgroundFrequency = findPreference(getString(R.string.pref_hw_background_counter_frequency));
+            Preference whichStepHardware = findPreference(getString(R.string.pref_which_step_hardware));
+            boolean hardwareEnabled = sharedPref.getBoolean(getString(R.string.pref_use_step_hardware), true);
+            if (backgroundFrequency != null) {
+                backgroundFrequency.setEnabled(hardwareEnabled);
+            }
+            if (whichStepHardware != null) {
+                whichStepHardware.setEnabled(hardwareEnabled);
+            }
 
 
             stepCounterEnabledPreference.setOnPreferenceClickListener(new Preference.OnPreferenceClickListener() {
                 @Override
                 public boolean onPreferenceClick(Preference preference) {
-                    StepCountPersistenceReceiver.unregisterSaveListener();
                     return true;
                 }
             });
@@ -608,21 +616,6 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
 
         private void saveStepsAndRestartService() {
             final Context context = getActivity().getApplicationContext();
-/*
-            StepCountPersistenceReceiver.registerSaveListener(new StepCountPersistenceReceiver.ISaveListener() {
-                @Override
-                public void onSaveDone() {
-                    //Log.d("save", "save done");
-                    StepCountPersistenceReceiver.unregisterSaveListener();
-
-                    if(context != null) {
-                        StepDetectionServiceHelper.startAllIfEnabled(true, context);
-                    }
-                }
-            });
-
-            StepDetectionServiceHelper.cancelPersistenceService(true, context);
-            StepDetectionServiceHelper.stopAllIfNotRequired(false, context);*/
             StepDetectionServiceHelper.restartStepDetection(context);
         }
 
@@ -683,24 +676,46 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         }
 
          private static void writeStepsToCSVOutputStream(GeneralPreferenceFragment generalPreferenceFragment, OutputStream outputStream, List<StepCount> steps, String fileName) throws IOException {
+            SimpleDateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US);
+            StringBuilder csv = new StringBuilder();
             //Add the header
-            outputStream.write((generalPreferenceFragment.getString(R.string.export_csv_header) + "\r\n").getBytes());
+            csv.append(generalPreferenceFragment.getString(R.string.export_csv_header)).append("\r\n");
             //Populate the file
-            String dateFormat = "yyyy-MM-dd HH:mm:ss";
             for (StepCount s : steps) {
-                String startDate = s.getStartTime() == 0 ? generalPreferenceFragment.getString(R.string.export_csv_begin) : DateFormat.format(dateFormat, new Date(s.getStartTime())).toString();
-                String endDate = DateFormat.format(dateFormat, new Date(s.getEndTime())).toString();
-                outputStream.write((startDate + ";" + endDate + ";" + s.getStepCount() + ";" + s.getWalkingMode().getName() + "\r\n").getBytes());
+                String startDate = s.getStartTime() == 0
+                        ? generalPreferenceFragment.getString(R.string.export_csv_begin)
+                        : dateFormat.format(new Date(s.getStartTime()));
+                String endDate = dateFormat.format(new Date(s.getEndTime()));
+                String walkingMode = s.getWalkingMode() != null ? s.getWalkingMode().getName() : "";
+                csv.append(csvField(startDate)).append(';')
+                        .append(csvField(endDate)).append(';')
+                        .append(s.getStepCount()).append(';')
+                        .append(csvField(walkingMode)).append("\r\n");
             }
-            outputStream.close();
-            Toast.makeText(generalPreferenceFragment.getActivity(), generalPreferenceFragment.getString(R.string.export_csv_success) + " " + fileName, Toast.LENGTH_SHORT).show();
+            OutputStreamWriter writer = new OutputStreamWriter(outputStream, StandardCharsets.UTF_8);
+            writer.write(csv.toString());
+            writer.flush();
+        }
+
+        /**
+         * Quotes a CSV field (RFC 4180) so that walking mode names containing separators or
+         * line breaks cannot corrupt the file.
+         */
+        private static String csvField(String value) {
+            if (value == null) {
+                return "\"\"";
+            }
+            return "\"" + value.replace("\"", "\"\"") + "\"";
         }
 
         public String getDocumentUriDisplayName(Uri uri) {
             Cursor cursor = getActivity().getContentResolver()
                     .query(uri, null, null, null, null, null);
+            if (cursor == null) {
+                return uri.getLastPathSegment();
+            }
             try {
-                if (cursor != null && cursor.moveToFirst()) {
+                if (cursor.moveToFirst()) {
                     // Note it's called "Display Name". This is
                     // provider-specific, and might not necessarily be the file name.
                     @SuppressLint("Range") String displayName = cursor.getString(
@@ -710,12 +725,12 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
             } finally {
                 cursor.close();
             }
-            return null;
+            return uri.getLastPathSegment();
         }
 
         public Object generateCSVToExport() {
             final Context context = getActivity().getApplicationContext();
-            SimpleDateFormat fileDateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss");
+            SimpleDateFormat fileDateFormat = new SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.US);
             String csvFileName = "exportStepCount_" + fileDateFormat.format(System.currentTimeMillis());
 
             try {
@@ -724,22 +739,21 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
                     intent.addCategory(Intent.CATEGORY_OPENABLE);
                     intent.setType("text/csv");
                     intent.putExtra(Intent.EXTRA_TITLE, csvFileName);
-                    // Optionally, specify a URI for the directory that should be opened in
-                    // the system file picker when your app creates the document.
-                    // intent.putExtra(DocumentsContract.EXTRA_INITIAL_URI, pickerInitialUri);
                     getActivity().startActivityForResult(intent, CREATE_FILE);
                     return intent;
                 } else {
                     List<StepCount> steps = StepCountPersistenceHelper.getStepCountsForever(getActivity());
                     File csvFile = new File(Environment.getExternalStoragePublicDirectory(context.getResources().getString(R.string.app_name)), csvFileName);
                     csvFile.getParentFile().mkdirs();
-                    OutputStream out = new FileOutputStream(csvFile);
-                    writeStepsToCSVOutputStream(this, out, steps, csvFileName + ".csv");
+                    try (OutputStream out = new FileOutputStream(csvFile)) {
+                        writeStepsToCSVOutputStream(this, out, steps, csvFileName + ".csv");
+                    }
+                    Toast.makeText(getActivity(), getString(R.string.export_csv_success) + " " + csvFile.getAbsolutePath(), Toast.LENGTH_SHORT).show();
                     return csvFile;
                 }
-            } catch (IOException e) {
+            } catch (IOException | RuntimeException e) {
+                Log.e(LOG_TAG, "Could not export the step count as CSV.", e);
                 Toast.makeText(getActivity(), getString(R.string.export_csv_error), Toast.LENGTH_SHORT).show();
-                e.printStackTrace();
             }
             return null;
         }
@@ -758,13 +772,21 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         public void onDetach() {
             SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplicationContext());
             sharedPref.unregisterOnSharedPreferenceChangeListener(this);
+            // The activity used to keep a static reference to this fragment, which leaked the
+            // fragment and its activity.
+            if (getActivity() instanceof PreferencesActivity
+                    && ((PreferencesActivity) getActivity()).generalPreferenceFragment == this) {
+                ((PreferencesActivity) getActivity()).generalPreferenceFragment = null;
+            }
             super.onDetach();
         }
 
         @Override
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
+            if (isDetached() || getActivity() == null) {
+                return;
+            }
             Context context = getActivity().getApplicationContext();
-            Log.d("preference check","pref changed: "+key);
 
             if (key != null && key.startsWith("pref_periodic_backup") && periodicBackupPreference != null) {
                 periodicBackupPreference.setSummary(PeriodicBackupManager.getSummary(context));
@@ -797,8 +819,14 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
 
             if (key.equals(getString(R.string.pref_use_step_hardware))) {
                 boolean isEnabled = sharedPreferences.getBoolean(getString(R.string.pref_use_step_hardware), true);
-                findPreference(getString(R.string.pref_hw_background_counter_frequency)).setEnabled(isEnabled);
-                findPreference(getString(R.string.pref_which_step_hardware)).setEnabled(isEnabled);
+                Preference backgroundFrequency = findPreference(getString(R.string.pref_hw_background_counter_frequency));
+                Preference whichHardware = findPreference(getString(R.string.pref_which_step_hardware));
+                if (backgroundFrequency != null) {
+                    backgroundFrequency.setEnabled(isEnabled);
+                }
+                if (whichHardware != null) {
+                    whichHardware.setEnabled(isEnabled);
+                }
             }
 
             if (key.equals(getString(R.string.pref_hw_background_counter_frequency)) && sharedPreferences.getString(getString(R.string.pref_which_step_hardware), "0").equals("0")) {
@@ -846,12 +874,18 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
         public void onDetach() {
             SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(getActivity().getApplicationContext());
             sharedPref.unregisterOnSharedPreferenceChangeListener(this);
+            // The activity used to keep a static reference to this fragment, which leaked the
+            // fragment and its activity.
+            if (getActivity() instanceof PreferencesActivity
+                    && ((PreferencesActivity) getActivity()).generalPreferenceFragment == this) {
+                ((PreferencesActivity) getActivity()).generalPreferenceFragment = null;
+            }
             super.onDetach();
         }
 
         @Override
         public void onSharedPreferenceChanged(SharedPreferences sharedPreferences, String key) {
-            if (isDetached()) {
+            if (isDetached() || getActivity() == null) {
                 return;
             }
             // Detect changes on preferences and update our internal variable
@@ -868,7 +902,9 @@ public class PreferencesActivity extends AppCompatPreferenceActivity {
 
 
     void exportCSVafterPermissionGranted() {
-        generalPreferenceFragment.generateCSVToExport();
+        if (generalPreferenceFragment != null) {
+            generalPreferenceFragment.generateCSVToExport();
+        }
     }
 
     /**

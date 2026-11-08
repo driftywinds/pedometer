@@ -32,6 +32,7 @@ import org.secuso.privacyfriendlyactivitytracker.persistence.StepCountPersistenc
 import org.secuso.privacyfriendlyactivitytracker.services.AbstractStepDetectorService;
 
 import java.util.Calendar;
+import java.util.Locale;
 import android.app.NotificationChannel;
 import android.app.NotificationManager;
 import android.content.Context;
@@ -185,19 +186,19 @@ public final class NotificationHelper {
                 context.getString(R.string.pref_notification_permanent_show_calories), false);
         String message = "";
         if (showSteps) {
-            message = String.format(context.getString(R.string.notification_text_steps),
+            message = String.format(Locale.getDefault(), context.getString(R.string.notification_text_steps),
                     totalSteps, dailyStepGoal);
         }
         if (showDistance) {
             message += (!message.isEmpty()) ? "\n" : "";
-            message += String.format(context.getString(R.string.notification_text_distance),
+            message += String.format(Locale.getDefault(), context.getString(R.string.notification_text_distance),
                     UnitHelper.kilometerToUsersLengthUnit(
                             UnitHelper.metersToKilometers(totalDistance), context),
                     UnitHelper.usersLengthDescriptionShort(context));
         }
         if (showCalories) {
             message += (!message.isEmpty()) ? "\n" : "";
-            message += String.format(context.getString(R.string.notification_text_calories), totalCalories);
+            message += String.format(Locale.getDefault(), context.getString(R.string.notification_text_calories), totalCalories);
         }
         if (message.isEmpty()) {
             message = context.getString(R.string.notification_text_default);
@@ -214,8 +215,6 @@ public final class NotificationHelper {
         }
         mBuilder.setContentTitle(context.getString(R.string.app_name))
                 .setContentText(message)
-                .setTicker(message)
-                .setStyle(new NotificationCompat.BigTextStyle().bigText(context.getString(R.string.app_name)))
                 .setStyle(new NotificationCompat.BigTextStyle().bigText(message))
                 .setSmallIcon(R.drawable.ic_stat_directions_walk);
         mBuilder.setContentIntent(pIntent);

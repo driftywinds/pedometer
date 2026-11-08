@@ -68,6 +68,7 @@ public class MainActivity extends BaseActivity implements DailyReportFragment.On
         if (!hasActivityRecognitionPermission()) {
             startActivity(new Intent(MainActivity.this, TutorialActivity.class));
             finish();
+            return;
         }
         setContentView(R.layout.activity_main);
         // init preferences

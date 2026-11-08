@@ -20,8 +20,6 @@ package org.secuso.privacyfriendlyactivitytracker.persistence;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
-import android.database.Cursor;
-import android.database.sqlite.SQLiteDatabase;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
 import android.util.Log;
@@ -54,7 +52,6 @@ public class StepCountPersistenceHelper {
     public static final String BROADCAST_ACTION_STEPS_UPDATED = "org.secuso.privacyfriendlystepcounter.STEPS_UPDATED";
     public static final String BROADCAST_ACTION_STEPS_INSERTED = "org.secuso.privacyfriendlystepcounter.STEPS_INSERTED";
     public static String LOG_CLASS = StepCountPersistenceHelper.class.getName();
-    private static SQLiteDatabase db = null;
 
     /**
      * Stores the current step count to database and resets the step counter in step-detector
@@ -68,32 +65,38 @@ public class StepCountPersistenceHelper {
             Log.e(LOG_CLASS, "Cannot store step count because service binder is null.");
             return false;
         }
+        if (!(serviceBinder instanceof AbstractStepDetectorService.StepDetectorBinder)) {
+            Log.e(LOG_CLASS, "Cannot store step count - unexpected binder type.");
+            return false;
+        }
         AbstractStepDetectorService.StepDetectorBinder myBinder = (AbstractStepDetectorService.StepDetectorBinder) serviceBinder;
-        StepCountDbHelper stepCountDbHelper = new StepCountDbHelper(context);
 
         // Get the steps since last save
         int stepCountSinceLastSave = myBinder.stepsSinceLastSave();
 
-        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
-        long updateInterval = Long.parseLong(sharedPref.getString(context.getString(R.string.pref_hw_background_counter_frequency), "3600000"));
-        StepCount lastStoredStepCount = stepCountDbHelper.getLatestStepCount();;
-        long currentTime = Calendar.getInstance().getTimeInMillis();
+        long updateInterval = getUpdateInterval(context);
+        StepCount lastStoredStepCount = new StepCountDbHelper(context).getLatestStepCount();
+        long currentTime = System.currentTimeMillis();
         long currentUpdateIntervalStartTime = currentTime - (updateInterval > 0 ? currentTime % updateInterval : 0);
-        if(lastStoredStepCount == null || (lastStoredStepCount.getEndTime() < currentUpdateIntervalStartTime && stepCountSinceLastSave + lastStoredStepCount.getStepCount() > 0) ||
-                lastStoredStepCount.getWalkingMode() != null && walkingMode != null && walkingMode.getId() != lastStoredStepCount.getWalkingMode().getId()) {
-            // create new step count if none is stored or last one was saved before the current update interval and there are new staps to save
-            // (the time interval of the previous step count may only be extended if it had 0 steps and there are 0 steps to add)
+        boolean sameWalkingMode = sameWalkingMode(lastStoredStepCount, walkingMode);
+        boolean sameDay = lastStoredStepCount != null && isSameLocalDay(lastStoredStepCount.getEndTime(), currentTime);
+        if (lastStoredStepCount == null
+                || !sameDay
+                || lastStoredStepCount.getEndTime() < currentUpdateIntervalStartTime
+                || !sameWalkingMode) {
+            // Create a new entry when there is none yet, when the previous one belongs to the
+            // previous day, when it is older than the current update interval or when the
+            // walking mode changed.
             StepCount stepCount = new StepCount();
             stepCount.setWalkingMode(walkingMode);
             stepCount.setStepCount(stepCountSinceLastSave);
             stepCount.setEndTime(currentTime);
-            stepCountDbHelper.addStepCount(stepCount);
+            new StepCountDbHelper(context).addStepCount(stepCount);
             Log.i(LOG_CLASS, "Creating new step count");
         } else {
             lastStoredStepCount.setStepCount(lastStoredStepCount.getStepCount() + stepCountSinceLastSave);
-            long oldEndTime = lastStoredStepCount.getEndTime();
             lastStoredStepCount.setEndTime(currentTime);
-            stepCountDbHelper.updateStepCount(lastStoredStepCount, oldEndTime);
+            new StepCountDbHelper(context).updateStepCount(lastStoredStepCount);
             Log.i(LOG_CLASS, "Updating last stored step count - not creating a new one");
         }
         // reset step count
@@ -106,6 +109,46 @@ public class StepCountPersistenceHelper {
         LocalBroadcastManager.getInstance(context).sendBroadcast(localIntent);
 
         return true;
+    }
+
+    private static boolean sameWalkingMode(StepCount stepCount, WalkingMode walkingMode) {
+        if (stepCount == null) {
+            return false;
+        }
+        WalkingMode storedMode = stepCount.getWalkingMode();
+        if (storedMode == null && walkingMode == null) {
+            return true;
+        }
+        if (storedMode == null || walkingMode == null) {
+            return false;
+        }
+        return storedMode.getId() == walkingMode.getId();
+    }
+
+    /**
+     * Steps that cross midnight must not be merged into one entry, otherwise the whole entry
+     * would be counted for the day it ends in.
+     */
+    private static boolean isSameLocalDay(long first, long second) {
+        Calendar a = Calendar.getInstance();
+        a.setTimeInMillis(first);
+        Calendar b = Calendar.getInstance();
+        b.setTimeInMillis(second);
+        return a.get(Calendar.YEAR) == b.get(Calendar.YEAR)
+                && a.get(Calendar.DAY_OF_YEAR) == b.get(Calendar.DAY_OF_YEAR);
+    }
+
+    /**
+     * The configured interval after which a new database entry is started.
+     */
+    public static long getUpdateInterval(Context context) {
+        SharedPreferences sharedPref = PreferenceManager.getDefaultSharedPreferences(context);
+        String value = sharedPref.getString(context.getString(R.string.pref_hw_background_counter_frequency), "3600000");
+        try {
+            return Math.max(1L, Long.parseLong(value));
+        } catch (NumberFormatException e) {
+            return 3600000L;
+        }
     }
 
     /**
@@ -126,7 +169,7 @@ public class StepCountPersistenceHelper {
     }
 
     /**
-     * Updates the given step count in database based on end timestamp
+     * Updates the given step count in database
      *
      * @param stepCount The step count to save
      * @param context       The application context
@@ -149,16 +192,8 @@ public class StepCountPersistenceHelper {
      * @return the number of steps
      */
     public static int getStepCountForDay(Calendar calendar, Context context) {
-        calendar.set(Calendar.MILLISECOND, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        long start_time = calendar.getTimeInMillis();
-        calendar.set(Calendar.SECOND, 59);
-        calendar.set(Calendar.MINUTE, 59);
-        calendar.set(Calendar.HOUR_OF_DAY, 23);
-        long end_time = calendar.getTimeInMillis();
-        return StepCountPersistenceHelper.getStepCountForInterval(start_time, end_time, context);
+        long[] interval = getDayInterval(calendar);
+        return StepCountPersistenceHelper.getStepCountForInterval(interval[0], interval[1], context);
     }
 
     /**
@@ -169,16 +204,25 @@ public class StepCountPersistenceHelper {
      * @return the step count models for the day
      */
     public static List<StepCount> getStepCountsForDay(Calendar calendar, Context context) {
-        calendar.set(Calendar.MILLISECOND, 0);
-        calendar.set(Calendar.SECOND, 0);
-        calendar.set(Calendar.MINUTE, 0);
-        calendar.set(Calendar.HOUR_OF_DAY, 0);
-        long start_time = calendar.getTimeInMillis();
-        calendar.set(Calendar.SECOND, 59);
-        calendar.set(Calendar.MINUTE, 59);
-        calendar.set(Calendar.HOUR_OF_DAY, 23);
-        long end_time = calendar.getTimeInMillis();
-        return StepCountPersistenceHelper.getStepCountsForInterval(start_time, end_time, context);
+        long[] interval = getDayInterval(calendar);
+        return StepCountPersistenceHelper.getStepCountsForInterval(interval[0], interval[1], context);
+    }
+
+    /**
+     * Returns the start (inclusive) and end (inclusive) of the day of the given calendar.
+     * The passed calendar is not modified.
+     */
+    private static long[] getDayInterval(Calendar calendar) {
+        Calendar start = (Calendar) calendar.clone();
+        start.set(Calendar.MILLISECOND, 0);
+        start.set(Calendar.SECOND, 0);
+        start.set(Calendar.MINUTE, 0);
+        start.set(Calendar.HOUR_OF_DAY, 0);
+        long startTime = start.getTimeInMillis();
+        start.add(Calendar.DAY_OF_MONTH, 1);
+        // The database query uses an inclusive upper bound.
+        long endTime = start.getTimeInMillis() - 1;
+        return new long[]{startTime, endTime};
     }
 
     /**
@@ -210,25 +254,7 @@ public class StepCountPersistenceHelper {
             Log.e(LOG_CLASS, "Cannot get step count - context is null");
             return new ArrayList<>();
         }
-        Cursor c = getDB(context).query(StepCountDbHelper.StepCountEntry.TABLE_NAME,
-                new String[]{StepCountDbHelper.StepCountEntry.KEY_STEP_COUNT, StepCountDbHelper.StepCountEntry.KEY_TIMESTAMP, StepCountDbHelper.StepCountEntry.KEY_WALKING_MODE},
-                "", new String[]{}, null, null, StepCountDbHelper.StepCountEntry.KEY_TIMESTAMP + " ASC");
-        List<StepCount> steps = new ArrayList<>();
-        long start = 0;
-        int sum = 0;
-        while (c.moveToNext()) {
-            StepCount s = new StepCount();
-            s.setStartTime(start);
-            s.setEndTime(c.getLong(c.getColumnIndexOrThrow(StepCountDbHelper.StepCountEntry.KEY_TIMESTAMP)));
-            s.setStepCount(c.getInt(c.getColumnIndexOrThrow(StepCountDbHelper.StepCountEntry.KEY_STEP_COUNT)));
-            //Log.w("ASDF", "Getting walking mode " + c.getLong(c.getColumnIndexOrThrow(StepCountDbHelper.StepCountEntry.COLUMN_NAME_WALKING_MODE)));
-            s.setWalkingMode(WalkingModePersistenceHelper.getItem(c.getLong(c.getColumnIndexOrThrow(StepCountDbHelper.StepCountEntry.KEY_WALKING_MODE)), context));
-            steps.add(s);
-            start = s.getEndTime();
-            sum += s.getStepCount();
-        }
-        c.close();
-        return steps;
+        return new StepCountDbHelper(context).getAllStepCounts();
     }
 
     /**
@@ -252,10 +278,10 @@ public class StepCountPersistenceHelper {
      * @param context Application context
      * @return Date of first entry or default today
      */
-    public static Date getDateOfFirstEntry(Context context){
+    public static Date getDateOfFirstEntry(Context context) {
         StepCount s = new StepCountDbHelper(context).getFirstStepCount();
         Date date = Calendar.getInstance().getTime(); // fallback is today
-        if(s != null){
+        if (s != null) {
             date.setTime(s.getEndTime());
         }
         return date;
@@ -267,41 +293,19 @@ public class StepCountPersistenceHelper {
      * @param context application context
      * @return the last step count entry for given day
      */
-    public static StepCount getLastStepCountEntryForDay(Calendar day, Context context){
+    public static StepCount getLastStepCountEntryForDay(Calendar day, Context context) {
         List<StepCount> stepCounts = getStepCountsForDay(day, context);
-        if(stepCounts.size() == 0){
+        if (stepCounts.isEmpty()) {
             return null;
-        }else{
-            return stepCounts.get(stepCounts.size() - 1);
         }
+        return stepCounts.get(stepCounts.size() - 1);
     }
 
     /**
-     * Returns the writable database
-     *
-     * @param context The application context
-     * @return a writable database object
-     */
-    protected static SQLiteDatabase getDB(Context context) {
-        if (StepCountPersistenceHelper.db == null) {
-            StepCountDbHelper dbHelper = new StepCountDbHelper(context);
-            StepCountPersistenceHelper.db = dbHelper.getWritableDatabase();
-        }
-        return StepCountPersistenceHelper.db;
-    }
-
-    /**
-     * Drops the cached database instance. This is required after the database file was
+     * Closes the cached database connection. This is required after the database file was
      * replaced (e.g. by an imported backup) so that the next access opens the new file.
      */
     public static void invalidateReference() {
-        if (StepCountPersistenceHelper.db != null) {
-            try {
-                StepCountPersistenceHelper.db.close();
-            } catch (RuntimeException e) {
-                Log.w(LOG_CLASS, "Could not close the cached step count database.", e);
-            }
-            StepCountPersistenceHelper.db = null;
-        }
+        StepCountDbHelper.invalidateReference();
     }
 }
